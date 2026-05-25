@@ -52,6 +52,11 @@
                     <h2 id="digest-date-label">Daily AI Digest — Loading...</h2>
                     <p class="text-subtitle">Your autonomous daily briefing on AI innovation and market changes</p>
                 </div>
+                <button class="btn-search-open" id="btn-search-open" title="Search articles (Ctrl+K)">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <span>Search</span>
+                    <kbd>Ctrl K</kbd>
+                </button>
                 <div class="header-status" id="header-status-badge">
                     <span class="status-indicator status-idle"></span>
                     <span class="status-text">System Idle</span>
@@ -330,6 +335,25 @@
                 </div>
             </div>
 
+        </div>
+    </div>
+
+    <!-- Search Overlay -->
+    <div class="search-overlay hidden" id="search-overlay">
+        <div class="search-panel">
+            <div class="search-input-row">
+                <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                <input type="text" id="search-input" placeholder="Search across all crawled articles..." autocomplete="off" spellcheck="false">
+                <button class="btn-close" id="btn-close-search"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="search-filters" id="search-filters"></div>
+            <div class="search-results" id="search-results">
+                <div class="search-empty">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <p>Type to search across all crawled articles</p>
+                    <span>Filter by source using the pills above</span>
+                </div>
+            </div>
         </div>
     </div>
 

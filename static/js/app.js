@@ -627,6 +627,180 @@ document.addEventListener("DOMContentLoaded", () => {
     // Trigger crawler sync
     btnTriggerSync.addEventListener("click", triggerSync);
 
+    // --- SEARCH ---
+
+    const searchOverlay  = document.getElementById("search-overlay");
+    const searchInput    = document.getElementById("search-input");
+    const searchFilters  = document.getElementById("search-filters");
+    const searchResults  = document.getElementById("search-results");
+    const btnSearchOpen  = document.getElementById("btn-search-open");
+    const btnCloseSearch = document.getElementById("btn-close-search");
+
+    let searchDebounce      = null;
+    let activeSourceFilter  = "";
+    let cachedSources       = [];
+
+    // Known source → domain mapping for favicons in filter pills
+    const SOURCE_DOMAIN_MAP = {
+        "Hacker News":   "news.ycombinator.com",
+        "Reddit":        "reddit.com",
+        "HuggingFace":   "huggingface.co",
+        "Arxiv":         "arxiv.org",
+        "GitHub":        "github.com",
+        "Product Hunt":  "producthunt.com",
+        "OpenAI Blog":   "openai.com",
+        "DeepMind Blog": "deepmind.google",
+        "Anthropic":     "anthropic.com",
+    };
+
+    function faviconForSource(source) {
+        const domain = SOURCE_DOMAIN_MAP[source];
+        return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : null;
+    }
+
+    function highlightMatch(text, query) {
+        if (!query || !text) return text || "";
+        const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return text.replace(new RegExp(`(${escaped})`, "gi"), "<mark>$1</mark>");
+    }
+
+    function openSearch() {
+        searchOverlay.classList.remove("hidden");
+        searchInput.focus();
+        if (cachedSources.length === 0) fetchSources();
+    }
+
+    function closeSearch() {
+        searchOverlay.classList.add("hidden");
+        searchInput.value     = "";
+        activeSourceFilter    = "";
+        searchResults.innerHTML = `
+            <div class="search-empty">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <p>Type to search across all crawled articles</p>
+                <span>Filter by source using the pills above</span>
+            </div>`;
+    }
+
+    async function fetchSources() {
+        try {
+            const res  = await fetch("/api/search");
+            const data = await res.json();
+            cachedSources = data.sources || [];
+            renderSourcePills();
+        } catch (e) { /* silently skip */ }
+    }
+
+    function renderSourcePills() {
+        searchFilters.innerHTML = `<span class="search-filter-label">Sources:</span>`;
+        cachedSources.forEach(source => {
+            const pill    = document.createElement("button");
+            pill.className = `source-pill${source === activeSourceFilter ? " active" : ""}`;
+            const favicon  = faviconForSource(source);
+            pill.innerHTML = `
+                ${favicon ? `<img src="${favicon}" onerror="this.style.display='none'" alt="">` : ""}
+                ${source}
+            `;
+            pill.addEventListener("click", () => {
+                activeSourceFilter = activeSourceFilter === source ? "" : source;
+                renderSourcePills();
+                runSearch();
+            });
+            searchFilters.appendChild(pill);
+        });
+    }
+
+    async function runSearch() {
+        const q = searchInput.value.trim();
+        if (!q && !activeSourceFilter) {
+            searchResults.innerHTML = `
+                <div class="search-empty">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <p>Type to search across all crawled articles</p>
+                    <span>Filter by source using the pills above</span>
+                </div>`;
+            return;
+        }
+
+        searchResults.innerHTML = `<div class="search-empty"><i class="fa-solid fa-circle-notch fa-spin"></i><p>Searching...</p></div>`;
+
+        try {
+            const params = new URLSearchParams();
+            if (q)                  params.set("q",      q);
+            if (activeSourceFilter) params.set("source", activeSourceFilter);
+
+            const res  = await fetch(`/api/search?${params}`);
+            const data = await res.json();
+
+            if (data.results.length === 0) {
+                const label = q ? `"${q}"` : activeSourceFilter;
+                searchResults.innerHTML = `
+                    <div class="search-empty">
+                        <i class="fa-regular fa-face-frown" style="opacity:0.2;"></i>
+                        <p>No results found for ${label}</p>
+                        <span>Try a different keyword or source filter</span>
+                    </div>`;
+                return;
+            }
+
+            searchResults.innerHTML = `<div class="search-count-bar">${data.total} result${data.total !== 1 ? "s" : ""}</div>`;
+
+            data.results.forEach(item => {
+                const a      = document.createElement("a");
+                a.className  = "search-result-item";
+                a.href       = item.url || "#";
+                a.target     = "_blank";
+                a.rel        = "noopener noreferrer";
+
+                const fav    = faviconForSource(item.source) || faviconFor(item.url);
+                const favImg = fav ? `<img src="${fav}" class="search-result-favicon" onerror="this.style.display='none'" alt="">` : "";
+                const desc   = item.description
+                    ? `<div class="search-result-desc">${highlightMatch(item.description, q)}</div>` : "";
+
+                a.innerHTML = `
+                    <div class="search-result-meta">
+                        ${favImg}
+                        <span class="search-result-source">${item.source}</span>
+                        <span class="search-result-dot">●</span>
+                        <span class="search-result-date">${item.date}</span>
+                        <span class="badge badge-category" style="font-size:9px;padding:2px 6px;margin-left:2px;">${item.category}</span>
+                    </div>
+                    <div class="search-result-title">${highlightMatch(item.title, q)}</div>
+                    ${desc}
+                `;
+                searchResults.appendChild(a);
+            });
+
+        } catch (e) {
+            searchResults.innerHTML = `<div class="search-empty" style="color:var(--accent-red);"><i class="fa-solid fa-triangle-exclamation"></i><p>Search failed — please try again.</p></div>`;
+        }
+    }
+
+    // Debounced input handler
+    searchInput && searchInput.addEventListener("input", () => {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(runSearch, 280);
+    });
+
+    btnSearchOpen  && btnSearchOpen.addEventListener("click",  openSearch);
+    btnCloseSearch && btnCloseSearch.addEventListener("click", closeSearch);
+
+    // Click outside the panel to close
+    searchOverlay && searchOverlay.addEventListener("click", e => {
+        if (e.target === searchOverlay) closeSearch();
+    });
+
+    // Keyboard shortcuts: Ctrl+K / ⌘K to toggle, Escape to close
+    document.addEventListener("keydown", e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+            e.preventDefault();
+            searchOverlay.classList.contains("hidden") ? openSearch() : closeSearch();
+        }
+        if (e.key === "Escape" && !searchOverlay.classList.contains("hidden")) {
+            closeSearch();
+        }
+    });
+
     // --- SETTINGS MODAL TAB SWITCHING ---
 
     const settingsTabBtns  = document.querySelectorAll(".settings-tab-btn");
