@@ -42,6 +42,37 @@ document.addEventListener("DOMContentLoaded", () => {
     const geminiKeyInput = document.getElementById("gemini-key-input");
     const keyStatusText = document.getElementById("key-status-text");
 
+    // --- MOBILE SIDEBAR DRAWER ---
+
+    const sidebar         = document.getElementById("app-sidebar-nav");
+    const sidebarBackdrop = document.getElementById("sidebar-backdrop");
+    const btnMobileMenu   = document.getElementById("mobile-menu-btn");
+
+    function openDrawer() {
+        sidebar.classList.add("drawer-open");
+        sidebarBackdrop.classList.add("visible");
+        document.body.style.overflow = "hidden";
+    }
+
+    function closeDrawer() {
+        sidebar.classList.remove("drawer-open");
+        sidebarBackdrop.classList.remove("visible");
+        document.body.style.overflow = "";
+    }
+
+    btnMobileMenu   && btnMobileMenu.addEventListener("click", openDrawer);
+    sidebarBackdrop && sidebarBackdrop.addEventListener("click", closeDrawer);
+
+    // Close drawer whenever a digest date is selected (only matters on mobile)
+    document.addEventListener("click", e => {
+        if (e.target.closest(".digest-history-item")) closeDrawer();
+    });
+
+    // Close on Escape
+    document.addEventListener("keydown", e => {
+        if (e.key === "Escape") closeDrawer();
+    });
+
     // --- IMAGE & FAVICON HELPERS ---
 
     // Returns a Google favicon CDN URL for any web address
