@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile emailer.py)",
+      "Bash(python -m py_compile database.py)",
+      "Bash(python -m py_compile app.py)",
+      "Bash(python -m py_compile D:/python_learning/ai_digest/emailer.py)",
+      "Bash(python -m py_compile D:/python_learning/ai_digest/database.py)",
+      "Bash(python -m py_compile D:/python_learning/ai_digest/app.py)"
+    ]
+  }
+}
