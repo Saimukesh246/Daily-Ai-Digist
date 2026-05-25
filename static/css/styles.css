@@ -1899,30 +1899,229 @@ body {
     font-style: normal;
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .app-container {
-        flex-direction: column;
-    }
-    .app-sidebar {
-        width: 100%;
-        height: auto;
-        position: relative;
-        border-right: none;
-        border-bottom: 1px solid var(--border-color);
-    }
+/* ==========================================================================
+   Mobile Menu Button (hidden on desktop)
+   ========================================================================== */
+
+.mobile-menu-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    color: var(--color-text-secondary);
+    font-size: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: var(--transition-smooth);
+}
+
+.mobile-menu-btn:hover {
+    background: rgba(0,240,255,0.08);
+    border-color: rgba(0,240,255,0.3);
+    color: var(--accent-cyan);
+}
+
+/* Sidebar backdrop (mobile drawer overlay) */
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(4,6,12,0.75);
+    backdrop-filter: blur(4px);
+    z-index: 99;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.sidebar-backdrop.visible {
+    opacity: 1;
+    pointer-events: all;
+}
+
+/* ==========================================================================
+   Responsive — Tablet (max 1024px): tighten spacing
+   ========================================================================== */
+
+@media (max-width: 1024px) {
     .app-viewport {
-        padding: 20px;
+        padding: 28px;
     }
+    .header-title h2 {
+        font-size: 24px;
+    }
+}
+
+/* ==========================================================================
+   Responsive — Mobile (max 768px): drawer sidebar + stacked layout
+   ========================================================================== */
+
+@media (max-width: 768px) {
+
+    /* Show hamburger, show backdrop */
+    .mobile-menu-btn  { display: flex; }
+    .sidebar-backdrop { display: block; }
+
+    /* Sidebar becomes a fixed off-screen drawer */
+    .app-sidebar {
+        position: fixed;
+        top: 0;
+        left: -300px;
+        height: 100vh;
+        width: 280px;
+        z-index: 100;
+        border-right: 1px solid rgba(0,240,255,0.2);
+        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: none;
+    }
+
+    .app-sidebar.drawer-open {
+        left: 0;
+        box-shadow: 16px 0 48px rgba(0,0,0,0.6);
+    }
+
+    /* Viewport takes full width, sidebar no longer occupies space */
+    .app-container {
+        flex-direction: row;
+    }
+
+    .app-viewport {
+        width: 100%;
+        min-width: 0;
+        padding: 16px;
+    }
+
+    /* Header: hamburger | title | search icon | status dot */
     .viewport-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 15px;
+        flex-wrap: nowrap;
+        gap: 10px;
+        align-items: center;
+        padding-bottom: 14px;
+        margin-bottom: 20px;
     }
-    .news-grid {
-        grid-template-columns: 1fr;
+
+    .header-title h2 {
+        font-size: 17px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
+
+    .header-title .text-subtitle {
+        display: none;
+    }
+
+    /* Search button: icon only on mobile */
+    .btn-search-open span,
+    .btn-search-open kbd {
+        display: none;
+    }
+
+    .btn-search-open {
+        padding: 8px 10px;
+        flex-shrink: 0;
+    }
+
+    /* Status badge: dot only */
+    .header-status .status-text {
+        display: none;
+    }
+
+    .header-status {
+        padding: 8px 10px;
+        flex-shrink: 0;
+    }
+
+    /* Reduce section gap */
+    .dashboard-content {
+        gap: 28px;
+    }
+
+    /* Hero card */
+    .hero-glass-card {
+        padding: 22px 20px;
+    }
+
+    .hero-headline {
+        font-size: 20px;
+    }
+
+    /* All card grids → single column */
+    .news-grid,
+    .research-grid,
+    .market-grid,
     .workflows-grid {
         grid-template-columns: 1fr;
+    }
+
+    /* Shorter card thumbnails on mobile */
+    .news-card-thumb     { height: 140px; }
+    .research-card-thumb { height: 96px; }
+    .market-card-thumb   { height: 80px; }
+
+    /* Tables scroll horizontally */
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Two-column footer → single column */
+    .two-column-footer {
+        grid-template-columns: 1fr;
+        gap: 28px;
+    }
+
+    /* Modals full-width */
+    .sync-hud-card,
+    .settings-card {
+        width: calc(100% - 24px) !important;
+        max-width: 100% !important;
+        margin: 0;
+        border-radius: var(--border-radius-md);
+    }
+
+    /* Settings SMTP grid → single column */
+    .smtp-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Subscriber add row stacks */
+    .subscriber-add-row {
+        flex-wrap: wrap;
+    }
+
+    .sub-name-field {
+        flex: 1 1 100%;
+    }
+
+    /* Search panel full width */
+    .search-overlay {
+        padding-top: 0;
+        align-items: flex-end;
+    }
+
+    .search-panel {
+        max-width: 100%;
+        border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+        max-height: 88vh;
+        animation: searchSlideUp 0.25s cubic-bezier(0.34,1.56,0.64,1);
+    }
+
+    @keyframes searchSlideUp {
+        from { transform: translateY(40px); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+    }
+
+    .search-results {
+        max-height: 52vh;
+    }
+
+    /* Section headers smaller */
+    .section-header h3 {
+        font-size: 16px;
     }
 }
