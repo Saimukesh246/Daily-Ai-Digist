@@ -185,6 +185,13 @@ async def serve_dashboard():
     with open(index_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
+@app.get("/api/search")
+async def search_articles(q: str = "", source: str = "", limit: int = 40):
+    """Searches raw articles by title/description. Returns results + all distinct sources."""
+    results = database.search_articles(DB_PATH, q.strip(), source.strip() or None, limit)
+    sources = database.get_distinct_sources(DB_PATH)
+    return {"results": results, "sources": sources, "total": len(results)}
+
 @app.get("/api/og-image")
 async def get_og_image(url: str):
     """Fetches and returns the OG/Twitter card image URL for a given article URL."""

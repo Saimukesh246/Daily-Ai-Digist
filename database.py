@@ -198,6 +198,42 @@ def get_setting(db_path, key, default=None):
 
 # --- Subscriber management ---
 
+def search_articles(db_path, query="", source_filter=None, limit=40):
+    """Full-text search across raw article titles and descriptions."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    term = f"%{query}%"
+    if source_filter:
+        cursor.execute(
+            """SELECT id, date, source, title, description, url, category
+               FROM raw_articles
+               WHERE (title LIKE ? OR description LIKE ?) AND source = ?
+               ORDER BY date DESC, id DESC LIMIT ?""",
+            (term, term, source_filter, limit),
+        )
+    else:
+        cursor.execute(
+            """SELECT id, date, source, title, description, url, category
+               FROM raw_articles
+               WHERE title LIKE ? OR description LIKE ?
+               ORDER BY date DESC, id DESC LIMIT ?""",
+            (term, term, limit),
+        )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_distinct_sources(db_path):
+    """Returns all distinct source names present in raw_articles."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT source FROM raw_articles ORDER BY source")
+    rows = cursor.fetchall()
+    conn.close()
+    return [row["source"] for row in rows]
+
+
 def add_subscriber(db_path, email, name=""):
     """Adds a new subscriber. Returns True if added, False if email already exists."""
     conn = get_db_connection(db_path)
