@@ -42,8 +42,44 @@ document.addEventListener("DOMContentLoaded", () => {
     const geminiKeyInput = document.getElementById("gemini-key-input");
     const keyStatusText = document.getElementById("key-status-text");
 
+    // --- IMAGE & FAVICON HELPERS ---
+
+    // Returns a Google favicon CDN URL for any web address
+    function faviconFor(url) {
+        try {
+            const host = new URL(url).hostname;
+            return `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+        } catch (e) { return null; }
+    }
+
+    // Extracts a short domain label (e.g. "arxiv.org") from a URL
+    function domainLabel(url) {
+        try { return new URL(url).hostname.replace(/^www\./, ""); } catch (e) { return ""; }
+    }
+
+    // Card gradient presets — rotated by index for visual variety
+    const THUMB_GRADS = ["thumb-g0","thumb-g1","thumb-g2","thumb-g3","thumb-g4"];
+
+    // Asynchronously fetches OG image via backend proxy and applies it to a thumb element
+    async function loadOgImage(url, thumbEl) {
+        try {
+            thumbEl.classList.add("thumb-loading");
+            const res  = await fetch(`/api/og-image?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+            thumbEl.classList.remove("thumb-loading");
+            if (data.image_url) {
+                thumbEl.style.backgroundImage = `url(${data.image_url})`;
+                thumbEl.style.backgroundSize  = "cover";
+                thumbEl.style.backgroundPosition = "center";
+                thumbEl.classList.add("has-og-image");
+            }
+        } catch (e) {
+            thumbEl.classList.remove("thumb-loading");
+        }
+    }
+
     // --- UTILITY METHODS ---
-    
+
     function formatDate(dateStr) {
         if (!dateStr) return "";
         const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
@@ -151,54 +187,82 @@ document.addEventListener("DOMContentLoaded", () => {
             
         // Render 1: Biggest News Grid
         newsGridContainer.innerHTML = "";
-        content.biggest_news.forEach((news) => {
+        content.biggest_news.forEach((news, idx) => {
             const card = document.createElement("div");
             card.className = "news-card";
-            
-            // Build key features bullet list
+
+            const gradClass  = THUMB_GRADS[idx % THUMB_GRADS.length];
+            const favicon    = faviconFor(news.link);
+            const domain     = domainLabel(news.link);
+            const faviconImg = favicon
+                ? `<img src="${favicon}" onerror="this.style.display='none'" alt="">`
+                : `<i class="fa-solid fa-globe" style="font-size:11px;opacity:0.5;"></i>`;
+
             const featuresHtml = news.key_features && news.key_features.length > 0
                 ? `<ul class="news-features-list">
                     ${news.key_features.map(f => `<li><i class="fa-solid fa-caret-right"></i> ${f}</li>`).join("")}
                    </ul>`
                 : "";
-                
+
             card.innerHTML = `
-                <div class="news-card-header">
-                    <h4 class="news-headline">${news.headline}</h4>
-                    <span class="badge badge-source">TOP STORIES</span>
-                </div>
-                <p class="news-summary">${news.summary}</p>
-                <div class="news-meta-block">
-                    <strong>WHY IT MATTERS:</strong>
-                    ${news.why_it_matters}
-                </div>
-                ${featuresHtml}
-                <div class="tldr-box">
-                    <strong>TL;DR:</strong> ${news.tldr}
-                </div>
-                <div class="news-footer">
-                    <div class="who-cares-badge">
-                        <span>Impact:</span> ${news.who_should_care}
+                <div class="news-card-thumb ${gradClass}">
+                    <i class="fa-regular fa-newspaper news-thumb-icon"></i>
+                    <div class="news-thumb-source">
+                        ${faviconImg}
+                        <span>${domain}</span>
                     </div>
-                    <a href="${news.link}" target="_blank" class="btn-link-action">Read Source <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+                </div>
+                <div class="news-card-body">
+                    <div class="news-card-header">
+                        <h4 class="news-headline">${news.headline}</h4>
+                        <span class="badge badge-source">TOP STORY</span>
+                    </div>
+                    <p class="news-summary">${news.summary}</p>
+                    <div class="news-meta-block">
+                        <strong>WHY IT MATTERS:</strong>
+                        ${news.why_it_matters}
+                    </div>
+                    ${featuresHtml}
+                    <div class="tldr-box">
+                        <strong>TL;DR:</strong> ${news.tldr}
+                    </div>
+                    <div class="news-footer">
+                        <div class="who-cares-badge">
+                            <span>Impact:</span> ${news.who_should_care}
+                        </div>
+                        <a href="${news.link}" target="_blank" class="btn-link-action">
+                            Read Source <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                        </a>
+                    </div>
                 </div>
             `;
+
             newsGridContainer.appendChild(card);
+            if (news.link) loadOgImage(news.link, card.querySelector(".news-card-thumb"));
         });
 
         // Render 2: Discovered Tools Table
         toolsTableBody.innerHTML = "";
         content.discovered_tools.forEach((tool) => {
-            const row = document.createElement("tr");
+            const row     = document.createElement("tr");
+            const favicon = faviconFor(tool.link);
+            const favImg  = favicon
+                ? `<img src="${favicon}" class="tool-favicon" onerror="this.style.display='none'" alt="">`
+                : "";
             row.innerHTML = `
-                <td class="tool-name-container">${tool.tool}</td>
+                <td class="tool-name-container">
+                    <div class="tool-name-with-favicon">
+                        ${favImg}
+                        <span>${tool.tool}</span>
+                    </div>
+                </td>
                 <td><span class="badge badge-category">${tool.category}</span></td>
                 <td>${tool.what_it_does}</td>
                 <td>${tool.why_it_matters}</td>
                 <td><span class="pricing-tag">${tool.pricing}</span></td>
                 <td>
-                    <a href="${tool.link}" target="_blank" class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 12px;">
-                        Explore <i class="fa-solid fa-external-link" style="font-size: 10px;"></i>
+                    <a href="${tool.link}" target="_blank" class="btn btn-secondary" style="width:auto;padding:6px 12px;font-size:12px;">
+                        Explore <i class="fa-solid fa-external-link" style="font-size:10px;"></i>
                     </a>
                 </td>
             `;
@@ -264,43 +328,74 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Render 5: Open Source & Research
         researchGridContainer.innerHTML = "";
-        content.open_source_research.forEach((item) => {
+        content.open_source_research.forEach((item, idx) => {
             const card = document.createElement("div");
             card.className = "research-card";
-            
-            const badgeType = item.category.toLowerCase().includes("paper") ? "badge-research" : "badge-repo";
-            
+
+            const badgeType  = item.category.toLowerCase().includes("paper") ? "badge-research" : "badge-repo";
+            const gradClass  = THUMB_GRADS[(idx + 2) % THUMB_GRADS.length];
+            const thumbIcon  = item.category.toLowerCase().includes("paper")
+                ? "fa-graduation-cap" : "fa-code-branch";
+
             card.innerHTML = `
-                <div class="research-header">
-                    <h4 class="research-title">${item.title}</h4>
-                    <span class="badge ${badgeType}">${item.category}</span>
+                <div class="research-card-thumb ${gradClass}">
+                    <i class="fa-solid ${thumbIcon} research-thumb-icon"></i>
                 </div>
-                <p class="news-summary">${item.summary}</p>
-                <div class="news-meta-block" style="border-color: var(--accent-cyan); margin-top: auto;">
-                    <strong>IMPACT ANALYSIS:</strong>
-                    ${item.why_it_matters}
-                </div>
-                <div style="text-align: right; padding-top: 5px;">
-                    <a href="${item.link}" target="_blank" class="btn-link-action" style="font-size: 12px;">Link <i class="fa-solid fa-chevron-right"></i></a>
+                <div class="research-card-body">
+                    <div class="research-header">
+                        <h4 class="research-title">${item.title}</h4>
+                        <span class="badge ${badgeType}">${item.category}</span>
+                    </div>
+                    <p class="news-summary">${item.summary}</p>
+                    <div class="news-meta-block" style="border-color:var(--accent-cyan);margin-top:auto;">
+                        <strong>IMPACT ANALYSIS:</strong>
+                        ${item.why_it_matters}
+                    </div>
+                    <div style="text-align:right;padding-top:5px;">
+                        <a href="${item.link}" target="_blank" class="btn-link-action" style="font-size:12px;">
+                            Link <i class="fa-solid fa-chevron-right"></i>
+                        </a>
+                    </div>
                 </div>
             `;
             researchGridContainer.appendChild(card);
+            if (item.link) loadOgImage(item.link, card.querySelector(".research-card-thumb"));
         });
 
         // Render 6: Market Movements
         marketGridContainer.innerHTML = "";
-        content.market_industry.forEach((item) => {
+        content.market_industry.forEach((item, idx) => {
             const card = document.createElement("div");
             card.className = "market-card";
+
+            const gradClass  = THUMB_GRADS[(idx + 1) % THUMB_GRADS.length];
+            const favicon    = faviconFor(item.link);
+            const domain     = domainLabel(item.link);
+            const faviconImg = favicon
+                ? `<img src="${favicon}" onerror="this.style.display='none'" alt="">`
+                : "";
+
             card.innerHTML = `
-                <div class="market-meta">
-                    <span class="badge badge-category" style="font-size: 9px; padding: 2px 6px;">${item.category}</span>
-                    <a href="${item.link}" target="_blank" class="btn-link-action" style="font-size: 11px;">Source <i class="fa-solid fa-xs fa-arrow-up-right-from-square"></i></a>
+                <div class="market-card-thumb ${gradClass}">
+                    <i class="fa-solid fa-chart-line market-thumb-icon"></i>
+                    <div class="market-source-badge">
+                        ${faviconImg}
+                        <span>${domain}</span>
+                    </div>
                 </div>
-                <h4 class="market-headline">${item.headline}</h4>
-                <p class="news-summary">${item.summary}</p>
+                <div class="market-card-body">
+                    <div class="market-meta">
+                        <span class="badge badge-category" style="font-size:9px;padding:2px 6px;">${item.category}</span>
+                        <a href="${item.link}" target="_blank" class="btn-link-action" style="font-size:11px;">
+                            Source <i class="fa-solid fa-xs fa-arrow-up-right-from-square"></i>
+                        </a>
+                    </div>
+                    <h4 class="market-headline">${item.headline}</h4>
+                    <p class="news-summary">${item.summary}</p>
+                </div>
             `;
             marketGridContainer.appendChild(card);
+            if (item.link) loadOgImage(item.link, card.querySelector(".market-card-thumb"));
         });
 
         // Render 7: Quick Takes

@@ -421,17 +421,113 @@ body {
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-lg);
     box-shadow: var(--shadow-premium);
-    padding: 24px;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    transition: var(--transition-smooth);
+    gap: 0;
+    overflow: hidden;
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), border-color 0.3s ease;
 }
 
 .news-card:hover {
-    transform: translateY(-4px);
+    transform: translateY(-6px);
     border-color: var(--border-hover);
-    box-shadow: 0 15px 30px -10px rgba(0, 240, 255, 0.15);
+    box-shadow: 0 24px 48px -12px rgba(0, 240, 255, 0.2), 0 0 0 1px rgba(0,240,255,0.1);
+}
+
+/* Thumbnail image area */
+.news-card-thumb {
+    width: 100%;
+    height: 168px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-size: cover;
+    background-position: center;
+    transition: background-image 0.4s ease;
+}
+
+/* Gradient presets — rotate across cards for visual variety */
+.thumb-g0 { background-image: linear-gradient(135deg, #0f2044 0%, #2d1060 100%); }
+.thumb-g1 { background-image: linear-gradient(135deg, #071a35 0%, #0c3050 100%); }
+.thumb-g2 { background-image: linear-gradient(135deg, #0a1628 0%, #1a0a35 100%); }
+.thumb-g3 { background-image: linear-gradient(135deg, #0d1f12 0%, #0a2040 100%); }
+.thumb-g4 { background-image: linear-gradient(135deg, #1a0628 0%, #0e1a40 100%); }
+
+/* When real OG image is loaded, remove gradient and show it */
+.news-card-thumb.has-og-image {
+    background-color: #0a0f1e;
+}
+
+.news-card-thumb.has-og-image .news-thumb-icon {
+    opacity: 0;
+}
+
+/* Bottom scrim so source badge is readable over any image */
+.news-card-thumb::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, rgba(6,9,19,0.72) 100%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Subtle zoom on hover */
+.news-card:hover .news-card-thumb {
+    background-position: center 45%;
+}
+
+/* Faint category icon centred in the thumb */
+.news-thumb-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    color: rgba(255,255,255,0.06);
+    transition: opacity 0.4s ease;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* Source/domain badge overlaid at bottom-left of thumb */
+.news-thumb-source {
+    position: absolute;
+    bottom: 10px;
+    left: 12px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(6,9,19,0.65);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 4px 10px 4px 7px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    max-width: calc(100% - 24px);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.news-thumb-source img {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+/* Content body below the thumb */
+.news-card-body {
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    flex: 1;
 }
 
 .news-card-header {
@@ -724,16 +820,56 @@ body {
     backdrop-filter: blur(16px);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-lg);
-    padding: 24px;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    transition: var(--transition-smooth);
+    gap: 0;
+    overflow: hidden;
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s ease, border-color 0.3s ease;
 }
 
 .research-card:hover {
-    transform: translateY(-3px);
-    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-5px);
+    border-color: rgba(0, 255, 170, 0.25);
+    box-shadow: 0 20px 40px -10px rgba(0, 255, 170, 0.12);
+}
+
+.research-card-thumb {
+    width: 100%;
+    height: 120px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-size: cover;
+    background-position: center;
+}
+
+.research-card-thumb::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(6,9,19,0.75) 100%);
+    z-index: 1;
+}
+
+.research-card-thumb.has-og-image .research-thumb-icon { opacity: 0; }
+
+.research-thumb-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 36px;
+    color: rgba(255,255,255,0.07);
+    transition: opacity 0.4s ease;
+}
+
+.research-card-body {
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
 }
 
 .research-header {
@@ -765,10 +901,80 @@ body {
     background: var(--bg-surface);
     border-radius: var(--border-radius-lg);
     border: 1px solid var(--border-color);
-    padding: 24px;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 0;
+    overflow: hidden;
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.market-card:hover {
+    transform: translateY(-5px);
+    border-color: rgba(181, 95, 230, 0.25);
+    box-shadow: 0 20px 40px -10px rgba(181, 95, 230, 0.12);
+}
+
+.market-card-thumb {
+    width: 100%;
+    height: 100px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-size: cover;
+    background-position: center;
+}
+
+.market-card-thumb::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(6,9,19,0.8) 100%);
+    z-index: 1;
+}
+
+.market-card-thumb.has-og-image .market-thumb-icon { opacity: 0; }
+
+.market-thumb-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 30px;
+    color: rgba(255,255,255,0.07);
+    transition: opacity 0.4s ease;
+}
+
+.market-source-badge {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(6,9,19,0.65);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 3px 8px 3px 6px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--color-text-muted);
+}
+
+.market-source-badge img {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+}
+
+.market-card-body {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
 }
 
 .market-meta {
@@ -1089,6 +1295,60 @@ body {
 
 .form-actions .btn {
     width: auto;
+}
+
+/* ==========================================================================
+   Card Image Enhancements
+   ========================================================================== */
+
+/* Tool name cell with favicon */
+.tool-name-with-favicon {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.tool-favicon {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    flex-shrink: 0;
+    object-fit: contain;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Skeleton shimmer while OG image is loading */
+@keyframes shimmer {
+    0%   { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+}
+
+.thumb-loading {
+    background-image: linear-gradient(
+        90deg,
+        rgba(255,255,255,0.02) 0px,
+        rgba(255,255,255,0.06) 80px,
+        rgba(255,255,255,0.02) 160px
+    ) !important;
+    background-size: 800px 100% !important;
+    animation: shimmer 1.6s infinite linear;
+}
+
+/* Smooth OG image fade-in */
+.news-card-thumb, .research-card-thumb, .market-card-thumb {
+    transition: background-image 0s, background-color 0.3s ease;
+}
+
+.news-card-thumb.has-og-image,
+.research-card-thumb.has-og-image,
+.market-card-thumb.has-og-image {
+    animation: imgFadeIn 0.5s ease forwards;
+}
+
+@keyframes imgFadeIn {
+    from { opacity: 0.5; }
+    to   { opacity: 1; }
 }
 
 /* ==========================================================================
