@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily AI Digest — Premium AI Intelligence Dashboard</title>
+    <!-- Premium Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom Style System -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="app-sidebar" id="app-sidebar-nav">
+            <div class="brand">
+                <div class="brand-logo"><i class="fa-solid fa-brain-circuit"></i></div>
+                <div class="brand-name">
+                    <h1>AI Digest</h1>
+                    <span>INTELLIGENCE REPORT</span>
+                </div>
+            </div>
+
+            <div class="sidebar-actions">
+                <button class="btn btn-primary" id="btn-trigger-sync"><i class="fa-solid fa-arrows-rotate"></i> Sync Latest News</button>
+            </div>
+
+            <div class="sidebar-menu">
+                <h3><i class="fa-regular fa-calendar-days"></i> Past Digests</h3>
+                <ul class="digest-history-list" id="digest-history-list">
+                    <!-- Historical dates loaded dynamically -->
+                    <li class="loading-placeholder">Loading history...</li>
+                </ul>
+            </div>
+
+            <div class="sidebar-footer">
+                <button class="btn btn-secondary btn-settings" id="btn-settings-toggle"><i class="fa-solid fa-sliders"></i> Configuration</button>
+            </div>
+        </aside>
+
+        <!-- Main Dashboard Viewport -->
+        <main class="app-viewport">
+            
+            <!-- Top Dashboard Header -->
+            <header class="viewport-header">
+                <div class="header-title">
+                    <h2 id="digest-date-label">Daily AI Digest — Loading...</h2>
+                    <p class="text-subtitle">Your autonomous daily briefing on AI innovation and market changes</p>
+                </div>
+                <div class="header-status" id="header-status-badge">
+                    <span class="status-indicator status-idle"></span>
+                    <span class="status-text">System Idle</span>
+                </div>
+            </header>
+
+            <!-- Dashboard Content Container -->
+            <div class="dashboard-content" id="dashboard-content">
+
+                <!-- 0. Dynamic Overview Hero Banner -->
+                <section class="hero-trend-section" id="hero-trend-container">
+                    <div class="hero-glass-card">
+                        <div class="hero-tag"><i class="fa-solid fa-arrow-trend-up"></i> Today's Core Trend Focus</div>
+                        <h2 class="hero-headline" id="editorial-trend-title">Loading today's biggest movement...</h2>
+                        <div class="hero-paragraphs" id="editorial-trend-paragraphs">
+                            <p>Analyzing aggregated data flows. Fetching intelligence reports...</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 1. Section: Biggest AI News Today -->
+                <section class="dashboard-section" id="news-section">
+                    <div class="section-header">
+                        <h3><i class="fa-regular fa-newspaper"></i> 1. Biggest AI News Today</h3>
+                        <span class="section-tagline">Curated top stories shaping the intelligence ecosystem</span>
+                    </div>
+                    <div class="news-grid" id="news-grid-container">
+                        <!-- Dynamic news cards injected here -->
+                    </div>
+                </section>
+
+                <!-- 2. Section: Discovered Tools -->
+                <section class="dashboard-section" id="tools-section">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-cubes-stacked"></i> 2. New AI Tools Discovered</h3>
+                        <span class="section-tagline">High-utility releases, developer libraries, and workspace agents</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="premium-table" id="tools-table">
+                            <thead>
+                                <tr>
+                                    <th>Tool</th>
+                                    <th>Category</th>
+                                    <th>What It Does</th>
+                                    <th>Why It Matters</th>
+                                    <th>Pricing</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tools-table-body">
+                                <!-- Dynamic rows injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- 3. Section: What Changed Since Yesterday -->
+                <section class="dashboard-section" id="changes-section">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i> 3. What Changed Since Yesterday</h3>
+                        <span class="section-tagline">Tracking version releases, pricing shifts, benchmarks, and API improvements</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="premium-table" id="changes-table">
+                            <thead>
+                                <tr>
+                                    <th>Company / Tool</th>
+                                    <th>Yesterday</th>
+                                    <th>Today's State</th>
+                                    <th>Why It Matters</th>
+                                </tr>
+                            </thead>
+                            <tbody id="changes-table-body">
+                                <!-- Dynamic rows injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- 4. Section: Trending AI Workflows -->
+                <section class="dashboard-section" id="workflows-section">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-network-wired"></i> 4. Trending AI Workflows</h3>
+                        <span class="section-tagline">Practical, high-value blueprints developers and business managers are deploying</span>
+                    </div>
+                    <div class="workflows-grid" id="workflows-grid-container">
+                        <!-- Dynamic workflows injected here -->
+                    </div>
+                </section>
+
+                <!-- 5. Section: Open Source & Research -->
+                <section class="dashboard-section" id="research-section">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-graduation-cap"></i> 5. Open Source & Technical Research</h3>
+                        <span class="section-tagline">Breaking down complex preprints, model benchmarks, and starred repositories</span>
+                    </div>
+                    <div class="research-grid" id="research-grid-container">
+                        <!-- Dynamic research cards injected here -->
+                    </div>
+                </section>
+
+                <!-- 6. Section: Market & Industry Movements -->
+                <section class="dashboard-section" id="market-section">
+                    <div class="section-header">
+                        <h3><i class="fa-solid fa-chart-line-up"></i> 6. Market & Industry Movements</h3>
+                        <span class="section-tagline">Venture rounds, enterprise integrations, chip shortages, and datacenter expansions</span>
+                    </div>
+                    <div class="market-grid" id="market-grid-container">
+                        <!-- Dynamic market cards injected here -->
+                    </div>
+                </section>
+
+                <!-- 7. Section: Quick Takes & Future Forecast -->
+                <div class="two-column-footer">
+                    <section class="dashboard-section Column" id="takes-section">
+                        <div class="section-header">
+                            <h3><i class="fa-regular fa-lightbulb"></i> 7. Quick Takes</h3>
+                            <span class="section-tagline">Sharp opinions on underrated vs. overhyped trends</span>
+                        </div>
+                        <div class="takes-list" id="takes-list-container">
+                            <!-- Dynamic opinions injected here -->
+                        </div>
+                    </section>
+
+                    <section class="dashboard-section Column" id="watch-section">
+                        <div class="section-header">
+                            <h3><i class="fa-regular fa-compass"></i> 8. What to Watch Tomorrow</h3>
+                            <span class="section-tagline">Upcoming announcements, tracking trends, and developing discussions</span>
+                        </div>
+                        <ul class="watch-list" id="watch-list-container">
+                            <!-- Dynamic watch bullets injected here -->
+                        </ul>
+                    </section>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Real-time Synchronization HUD overlay -->
+    <div class="modal-overlay hidden" id="sync-hud-overlay">
+        <div class="sync-hud-card">
+            <div class="hud-header">
+                <h2><i class="fa-solid fa-gears fa-spin accent-spin"></i> Intelligent News Synchronization HUD</h2>
+                <button class="btn-close" id="btn-close-hud"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="hud-body">
+                <div class="hud-progress-meter">
+                    <div class="hud-progress-bar-container">
+                        <div class="hud-progress-bar" id="hud-progress-bar"></div>
+                    </div>
+                    <p class="hud-step-text" id="hud-step-text">Connecting to scraping channels...</p>
+                </div>
+                <div class="hud-console">
+                    <div class="console-header">
+                        <span>CRAWLER CONSOLE LOGS</span>
+                        <span class="console-pulse">● LIVE</span>
+                    </div>
+                    <div class="console-logs" id="console-logs-container">
+                        <!-- Log lines appended here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration Settings Modal -->
+    <div class="modal-overlay hidden" id="settings-modal-overlay">
+        <div class="settings-card">
+            <div class="settings-header">
+                <h2><i class="fa-solid fa-sliders"></i> Configuration & Credentials</h2>
+                <button class="btn-close" id="btn-close-settings"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="settings-tabs-nav">
+                <button class="settings-tab-btn active" data-tab="ai-model">
+                    <i class="fa-solid fa-brain-circuit"></i> AI Model
+                </button>
+                <button class="settings-tab-btn" data-tab="email">
+                    <i class="fa-solid fa-envelope"></i> Email Delivery
+                </button>
+            </div>
+
+            <!-- Tab Panel: AI Model -->
+            <div class="settings-tab-panel" id="settings-panel-ai-model">
+                <div class="settings-body">
+                    <p class="settings-explanation">
+                        To activate high-fidelity AI newsletter summaries in the writing styles of <strong>The Rundown AI</strong> and <strong>TLDR</strong>, input your Gemini API Key. If left empty, the engine automatically defaults to our high-fidelity, real-data-driven <strong>Intelligent Offline Fallback</strong>.
+                    </p>
+                    <div class="form-group">
+                        <label for="gemini-key-input">Gemini API Key (stored locally inside SQLite):</label>
+                        <input type="password" id="gemini-key-input" placeholder="Paste your API key (AI Studio, e.g. AIzaSy...)" autocomplete="off">
+                        <span class="key-status-text" id="key-status-text">Checking credentials...</span>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-secondary" id="btn-cancel-settings">Cancel</button>
+                        <button class="btn btn-primary" id="btn-save-settings"><i class="fa-solid fa-floppy-disk"></i> Save Key</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Panel: Email Delivery -->
+            <div class="settings-tab-panel hidden" id="settings-panel-email">
+                <div class="settings-body">
+
+                    <!-- SMTP Configuration -->
+                    <div class="email-section">
+                        <h4 class="email-section-title"><i class="fa-solid fa-server"></i> SMTP Configuration</h4>
+                        <p class="settings-explanation">Works with Gmail (port 587), Outlook, SendGrid, or any SMTP provider. For Gmail, use an App Password, not your account password.</p>
+                        <div class="smtp-form-grid">
+                            <div class="form-group">
+                                <label for="smtp-host-input">SMTP Host</label>
+                                <input type="text" id="smtp-host-input" placeholder="smtp.gmail.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="smtp-port-input">Port</label>
+                                <input type="number" id="smtp-port-input" placeholder="587" value="587">
+                            </div>
+                            <div class="form-group">
+                                <label for="smtp-user-input">Username / From Address</label>
+                                <input type="email" id="smtp-user-input" placeholder="you@gmail.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="smtp-pass-input">Password / App Password</label>
+                                <input type="password" id="smtp-pass-input" placeholder="Leave blank to keep current">
+                            </div>
+                            <div class="form-group">
+                                <label for="smtp-from-name-input">Sender Display Name</label>
+                                <input type="text" id="smtp-from-name-input" placeholder="Daily AI Digest">
+                            </div>
+                            <div class="form-group">
+                                <label>Scheduled Delivery</label>
+                                <label class="toggle-switch-label">
+                                    <input type="checkbox" id="email-enabled-toggle">
+                                    <span class="toggle-switch-track">
+                                        <span class="toggle-switch-knob"></span>
+                                    </span>
+                                    <span id="email-enabled-label">Auto-send digest at 7 AM daily</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-actions" style="margin-top:4px;">
+                            <span class="key-status-text" id="smtp-status-text"></span>
+                            <button class="btn btn-primary" id="btn-save-smtp" style="width:auto;"><i class="fa-solid fa-floppy-disk"></i> Save SMTP</button>
+                        </div>
+                    </div>
+
+                    <!-- Subscriber Management -->
+                    <div class="email-section">
+                        <h4 class="email-section-title"><i class="fa-solid fa-users"></i> Subscribers</h4>
+                        <div class="subscriber-add-row">
+                            <input type="email" id="sub-email-input" placeholder="name@example.com" class="sub-email-field">
+                            <input type="text" id="sub-name-input" placeholder="Display name (optional)" class="sub-name-field">
+                            <button class="btn btn-primary" id="btn-add-subscriber" style="width:auto;white-space:nowrap;"><i class="fa-solid fa-plus"></i> Add</button>
+                        </div>
+                        <span class="key-status-text" id="sub-status-text"></span>
+                        <ul class="subscriber-list" id="subscriber-list">
+                            <li class="subscriber-empty">Loading subscribers...</li>
+                        </ul>
+                    </div>
+
+                    <!-- Test Send -->
+                    <div class="email-section">
+                        <h4 class="email-section-title"><i class="fa-solid fa-paper-plane"></i> Test Delivery</h4>
+                        <div class="subscriber-add-row">
+                            <input type="email" id="test-email-input" placeholder="Send test to this address..." class="sub-email-field" style="flex:1;">
+                            <button class="btn btn-secondary" id="btn-send-test" style="width:auto;white-space:nowrap;"><i class="fa-solid fa-paper-plane"></i> Send Test</button>
+                        </div>
+                        <span class="key-status-text" id="test-status-text"></span>
+                    </div>
+
+                    <div class="form-actions" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:16px; margin-top:4px;">
+                        <button class="btn btn-secondary" id="btn-cancel-settings-email">Close</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Dynamic JavaScript Engine -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
