@@ -242,6 +242,9 @@
                 <button class="settings-tab-btn" data-tab="email">
                     <i class="fa-solid fa-envelope"></i> Email Delivery
                 </button>
+                <button class="settings-tab-btn" data-tab="sources">
+                    <i class="fa-solid fa-toggle-on"></i> Sources
+                </button>
             </div>
 
             <!-- Tab Panel: AI Model -->
@@ -334,6 +337,22 @@
 
                     <div class="form-actions" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:16px; margin-top:4px;">
                         <button class="btn btn-secondary" id="btn-cancel-settings-email">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Panel: Sources -->
+            <div class="settings-tab-panel hidden" id="settings-panel-sources">
+                <div class="settings-body">
+                    <p class="settings-explanation">
+                        Toggle sources on or off and tune how many results each one fetches. For Reddit and GitHub you can also customise which subreddits and keywords are searched. Changes apply on the next <strong>Sync</strong>.
+                    </p>
+                    <div id="scraper-source-list">
+                        <p class="settings-explanation">Loading sources...</p>
+                    </div>
+                    <div class="form-actions" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:16px; margin-top:4px;">
+                        <span class="key-status-text" id="scraper-status-text"></span>
+                        <button class="btn btn-primary" id="btn-save-scraper" style="width:auto;"><i class="fa-solid fa-floppy-disk"></i> Save Sources</button>
                     </div>
                 </div>
             </div>

@@ -2125,3 +2125,163 @@ body {
         font-size: 16px;
     }
 }
+
+/* ==========================================================================
+   Scraper Sources Settings — source toggle rows & tag chips
+   ========================================================================== */
+
+.scraper-source-row {
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.scraper-source-row:last-child {
+    border-bottom: none;
+}
+
+.scraper-source-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.scraper-source-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.scraper-source-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--color-text-primary);
+    flex: 1;
+}
+
+/* Extra controls (limit + tag inputs) indented under icon */
+.scraper-source-extra {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-start;
+    padding-left: 44px;
+}
+
+.scraper-limit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.scraper-limit-input {
+    width: 58px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    padding: 4px 8px;
+    color: #fff;
+    font-size: 13px;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.scraper-limit-input:focus {
+    border-color: var(--accent-purple);
+}
+
+/* Tag-input group */
+.scraper-tags-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 180px;
+}
+
+.scraper-tags-label {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tag-input-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    padding: 6px 10px;
+    min-height: 38px;
+    cursor: text;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.tag-input-wrapper:focus-within {
+    border-color: var(--accent-purple);
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 0 8px rgba(181, 95, 230, 0.12);
+}
+
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(181, 95, 230, 0.12);
+    border: 1px solid rgba(181, 95, 230, 0.3);
+    border-radius: 12px;
+    padding: 3px 8px 3px 10px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--accent-purple);
+    white-space: nowrap;
+}
+
+.tag-chip-remove {
+    background: none;
+    border: none;
+    padding: 0;
+    color: rgba(181, 95, 230, 0.55);
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    transition: color 0.2s ease;
+}
+
+.tag-chip-remove:hover {
+    color: var(--accent-red);
+}
+
+.tag-bare-input {
+    flex: 1;
+    min-width: 90px;
+    background: none;
+    border: none;
+    outline: none;
+    color: #fff;
+    font-family: var(--font-body);
+    font-size: 13px;
+    padding: 2px 0;
+}
+
+.tag-bare-input::placeholder {
+    color: var(--color-text-muted);
+    font-size: 12px;
+}

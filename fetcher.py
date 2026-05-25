@@ -24,12 +24,12 @@ def safe_request(url, headers=HEADERS, timeout=10):
         logger.error(f"Failed to fetch {url}: {e}")
         return None
 
-def fetch_hacker_news_ai(date_str):
+def fetch_hacker_news_ai(date_str, limit=20):
     """Fetches trending AI stories from Hacker News using the Algolia API."""
     logger.info("Fetching Hacker News AI stories...")
     # Get stories from the past 36 hours
     time_limit = int((datetime.utcnow() - timedelta(hours=36)).timestamp())
-    url = f"https://hn.algolia.com/api/v1/search_by_date?tags=story&numericFilters=created_at_i>{time_limit}&query=AI&hitsPerPage=20"
+    url = f"https://hn.algolia.com/api/v1/search_by_date?tags=story&numericFilters=created_at_i>{time_limit}&query=AI&hitsPerPage={limit}"
     
     response = safe_request(url)
     articles = []
@@ -55,14 +55,15 @@ def fetch_hacker_news_ai(date_str):
             logger.error(f"Error parsing Hacker News response: {e}")
     return articles
 
-def fetch_reddit_ai():
+def fetch_reddit_ai(subreddits=None, limit=10):
     """Fetches new/hot AI developments from key subreddits."""
     logger.info("Fetching Reddit AI topics...")
-    subreddits = ["MachineLearning", "singularity", "ArtificialInteligence"]
+    if not subreddits:
+        subreddits = ["MachineLearning", "singularity", "ArtificialInteligence"]
     articles = []
-    
+
     for sub in subreddits:
-        url = f"https://www.reddit.com/r/{sub}/hot.json?limit=10"
+        url = f"https://www.reddit.com/r/{sub}/hot.json?limit={limit}"
         response = safe_request(url)
         if response:
             try:
@@ -98,17 +99,17 @@ def fetch_reddit_ai():
                 logger.error(f"Error parsing Reddit r/{sub}: {e}")
     return articles
 
-def fetch_huggingface_papers():
+def fetch_huggingface_papers(limit=15):
     """Fetches daily paper releases from Hugging Face."""
     logger.info("Fetching Hugging Face Daily Papers...")
     url = "https://huggingface.co/api/daily_papers"
     response = safe_request(url)
     articles = []
-    
+
     if response:
         try:
             data = response.json()
-            for paper in data[:15]: # Take top 15 daily papers
+            for paper in data[:limit]:
                 paper_obj = paper.get("paper", {})
                 title = paper_obj.get("title")
                 paper_id = paper_obj.get("id")
@@ -132,10 +133,10 @@ def fetch_huggingface_papers():
             logger.error(f"Error parsing Hugging Face Daily Papers: {e}")
     return articles
 
-def fetch_arxiv_ai():
+def fetch_arxiv_ai(limit=15):
     """Fetches recent AI preprints from Arxiv."""
     logger.info("Fetching Arxiv AI preprints...")
-    url = "https://export.arxiv.org/api/query?search_query=cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CL&sortBy=submittedDate&sortOrder=descending&max_results=15"
+    url = f"https://export.arxiv.org/api/query?search_query=cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CL&sortBy=submittedDate&sortOrder=descending&max_results={limit}"
     response = safe_request(url)
     articles = []
     
@@ -162,14 +163,16 @@ def fetch_arxiv_ai():
             logger.error(f"Error parsing Arxiv XML response: {e}")
     return articles
 
-def fetch_github_trending():
+def fetch_github_trending(keywords=None, limit=15):
     """Fetches trending AI/LLM GitHub repositories created recently."""
     logger.info("Fetching GitHub Trending AI Repositories...")
-    # Search for repos with description/topics matching AI terms, created recently (last 15 days)
+    if not keywords:
+        keywords = ["ai", "llm", "agent", "machine-learning", "neural"]
     fifteen_days_ago = (datetime.utcnow() - timedelta(days=15)).strftime("%Y-%m-%d")
-    query = f"created:>{fifteen_days_ago} (ai OR llm OR agent OR machine-learning OR neural)"
+    kw_str = " OR ".join(keywords)
+    query = f"created:>{fifteen_days_ago} ({kw_str})"
     encoded_query = urllib.parse.quote(query)
-    url = f"https://api.github.com/search/repositories?q={encoded_query}&sort=stars&order=desc&per_page=15"
+    url = f"https://api.github.com/search/repositories?q={encoded_query}&sort=stars&order=desc&per_page={limit}"
     
     response = safe_request(url)
     repos = []
@@ -292,52 +295,71 @@ def fetch_lab_blogs():
             
     return articles
 
-def fetch_all_sources(date_str):
+def fetch_all_sources(date_str, config=None):
     """Orchestrates data fetching across all targets, compiling items into a flat list."""
     logger.info(f"Triggering global AI news crawl for date {date_str}...")
+    if config is None:
+        config = {}
     all_items = []
-    
+
+    def _cfg(key):
+        return config.get(key, {})
+
     # 1. Hacker News AI
-    try:
-        all_items.extend(fetch_hacker_news_ai(date_str))
-    except Exception as e:
-        logger.error(f"Error fetching HN: {e}")
-        
+    hn = _cfg("hacker_news")
+    if hn.get("enabled", True):
+        try:
+            all_items.extend(fetch_hacker_news_ai(date_str, limit=hn.get("limit", 20)))
+        except Exception as e:
+            logger.error(f"Error fetching HN: {e}")
+
     # 2. Reddit AI Communities
-    try:
-        all_items.extend(fetch_reddit_ai())
-    except Exception as e:
-        logger.error(f"Error fetching Reddit: {e}")
-        
+    rd = _cfg("reddit")
+    if rd.get("enabled", True):
+        try:
+            all_items.extend(fetch_reddit_ai(subreddits=rd.get("subreddits"), limit=rd.get("limit", 10)))
+        except Exception as e:
+            logger.error(f"Error fetching Reddit: {e}")
+
     # 3. Hugging Face Daily Papers
-    try:
-        all_items.extend(fetch_huggingface_papers())
-    except Exception as e:
-        logger.error(f"Error fetching Hugging Face: {e}")
-        
+    hf = _cfg("huggingface")
+    if hf.get("enabled", True):
+        try:
+            all_items.extend(fetch_huggingface_papers(limit=hf.get("limit", 15)))
+        except Exception as e:
+            logger.error(f"Error fetching Hugging Face: {e}")
+
     # 4. Arxiv preprints
-    try:
-        all_items.extend(fetch_arxiv_ai())
-    except Exception as e:
-        logger.error(f"Error fetching Arxiv: {e}")
-        
+    ax = _cfg("arxiv")
+    if ax.get("enabled", True):
+        try:
+            all_items.extend(fetch_arxiv_ai(limit=ax.get("limit", 15)))
+        except Exception as e:
+            logger.error(f"Error fetching Arxiv: {e}")
+
     # 5. GitHub Trending AI repos
-    try:
-        all_items.extend(fetch_github_trending())
-    except Exception as e:
-        logger.error(f"Error fetching GitHub: {e}")
-        
+    gh = _cfg("github")
+    if gh.get("enabled", True):
+        try:
+            all_items.extend(fetch_github_trending(keywords=gh.get("keywords"), limit=gh.get("limit", 15)))
+        except Exception as e:
+            logger.error(f"Error fetching GitHub: {e}")
+
     # 6. Product Hunt AI tools
-    try:
-        all_items.extend(fetch_product_hunt_ai())
-    except Exception as e:
-        logger.error(f"Error fetching Product Hunt: {e}")
-        
+    ph = _cfg("product_hunt")
+    if ph.get("enabled", True):
+        try:
+            all_items.extend(fetch_product_hunt_ai())
+        except Exception as e:
+            logger.error(f"Error fetching Product Hunt: {e}")
+
     # 7. AI Lab blogs
-    try:
-        all_items.extend(fetch_lab_blogs())
-    except Exception as e:
-        logger.error(f"Error fetching lab blogs: {e}")
+    lb = _cfg("lab_blogs")
+    if lb.get("enabled", True):
+        try:
+            all_items.extend(fetch_lab_blogs())
+        except Exception as e:
+            logger.error(f"Error fetching lab blogs: {e}")
         
     # Deduplicate based on URL
     unique_items = []
