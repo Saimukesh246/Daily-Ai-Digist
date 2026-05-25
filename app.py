@@ -8,6 +8,9 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import requests as _requests
+from bs4 import BeautifulSoup as _BeautifulSoup
+
 import database
 import fetcher
 import analyzer
@@ -32,6 +35,9 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 # Database initialization
 DB_PATH = database.DEFAULT_DB_PATH
 database.init_db(DB_PATH)
+
+# In-memory OG image cache — avoids re-scraping the same URL within a session
+_og_cache: dict = {}
 
 # Global synchronization progress state
 SYNC_STATUS = {
@@ -178,6 +184,26 @@ async def serve_dashboard():
         """
     with open(index_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
+
+@app.get("/api/og-image")
+async def get_og_image(url: str):
+    """Fetches and returns the OG/Twitter card image URL for a given article URL."""
+    if url in _og_cache:
+        return _og_cache[url]
+    result = {"image_url": ""}
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; AiDigestBot/1.0; +http://localhost)"}
+        resp = _requests.get(url, headers=headers, timeout=6, allow_redirects=True)
+        soup = _BeautifulSoup(resp.text, "html.parser")
+        for attr, val in [("property", "og:image"), ("name", "twitter:image"), ("property", "twitter:image")]:
+            tag = soup.find("meta", {attr: val})
+            if tag and tag.get("content"):
+                result = {"image_url": tag["content"]}
+                break
+    except Exception:
+        pass
+    _og_cache[url] = result
+    return result
 
 @app.get("/api/digests")
 async def list_digests():
