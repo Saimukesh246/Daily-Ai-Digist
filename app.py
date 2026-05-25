@@ -67,6 +67,9 @@ class TestEmailPayload(BaseModel):
     to: str
     date: str = ""
 
+class ScraperSettingsPayload(BaseModel):
+    config: dict
+
 def add_log(message):
     """Utility to log messages both to the console and to the global status feed."""
     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -85,39 +88,80 @@ def run_sync_job(date_str):
         SYNC_STATUS["logs"] = []
         
         add_log("Starting Daily AI Digest gathering job...")
-        
+
+        # Load scraper config from DB (falls back to defaults if not set)
+        cfg = database.get_scraper_config(DB_PATH)
+
         # 1. Fetching raw resources
         add_log("Connecting to data sources...")
-        add_log("Crawling Hacker News AI stories (last 36 hours)...")
-        hn_items = fetcher.fetch_hacker_news_ai(date_str)
-        add_log(f"-> Hacker News: Found {len(hn_items)} articles.")
-        
-        add_log("Crawling Reddit AI subreddits (r/MachineLearning, r/singularity, r/ArtificialInteligence)...")
-        reddit_items = fetcher.fetch_reddit_ai()
-        add_log(f"-> Reddit: Found {len(reddit_items)} posts.")
-        
-        add_log("Crawling Hugging Face daily paper API...")
-        hf_items = fetcher.fetch_huggingface_papers()
-        add_log(f"-> Hugging Face: Found {len(hf_items)} papers.")
-        
-        add_log("Crawling Arxiv CS.AI XML feed...")
-        arxiv_items = fetcher.fetch_arxiv_ai()
-        add_log(f"-> Arxiv: Found {len(arxiv_items)} preprints.")
-        
-        add_log("Crawling GitHub API for trending AI repositories (created in last 7 days)...")
-        github_items = fetcher.fetch_github_trending()
-        add_log(f"-> GitHub Trending: Found {len(github_items)} repositories.")
-        
-        add_log("Crawling Product Hunt tech launch RSS feed...")
-        ph_items = fetcher.fetch_product_hunt_ai()
-        add_log(f"-> Product Hunt: Found {len(ph_items)} launches.")
-        
-        add_log("Crawling AI Lab blogs (OpenAI, DeepMind, Anthropic news)...")
-        lab_items = fetcher.fetch_lab_blogs()
-        add_log(f"-> Lab Blogs: Found {len(lab_items)} articles.")
-        
-        # Combine and deduplicate
-        all_items = hn_items + reddit_items + hf_items + arxiv_items + github_items + ph_items + lab_items
+        all_items = []
+
+        hn_cfg = cfg.get("hacker_news", {})
+        if hn_cfg.get("enabled", True):
+            add_log("Crawling Hacker News AI stories (last 36 hours)...")
+            hn_items = fetcher.fetch_hacker_news_ai(date_str, limit=hn_cfg.get("limit", 20))
+            add_log(f"-> Hacker News: Found {len(hn_items)} articles.")
+            all_items.extend(hn_items)
+        else:
+            add_log("-> Hacker News: Skipped (disabled in Sources settings).")
+
+        rd_cfg = cfg.get("reddit", {})
+        if rd_cfg.get("enabled", True):
+            subs = rd_cfg.get("subreddits", ["MachineLearning", "singularity", "ArtificialInteligence"])
+            add_log(f"Crawling Reddit AI subreddits ({', '.join(f'r/{s}' for s in subs)})...")
+            reddit_items = fetcher.fetch_reddit_ai(subreddits=subs, limit=rd_cfg.get("limit", 10))
+            add_log(f"-> Reddit: Found {len(reddit_items)} posts.")
+            all_items.extend(reddit_items)
+        else:
+            add_log("-> Reddit: Skipped (disabled in Sources settings).")
+
+        hf_cfg = cfg.get("huggingface", {})
+        if hf_cfg.get("enabled", True):
+            add_log("Crawling Hugging Face daily paper API...")
+            hf_items = fetcher.fetch_huggingface_papers(limit=hf_cfg.get("limit", 15))
+            add_log(f"-> Hugging Face: Found {len(hf_items)} papers.")
+            all_items.extend(hf_items)
+        else:
+            add_log("-> Hugging Face: Skipped (disabled in Sources settings).")
+
+        ax_cfg = cfg.get("arxiv", {})
+        if ax_cfg.get("enabled", True):
+            add_log("Crawling Arxiv CS.AI XML feed...")
+            arxiv_items = fetcher.fetch_arxiv_ai(limit=ax_cfg.get("limit", 15))
+            add_log(f"-> Arxiv: Found {len(arxiv_items)} preprints.")
+            all_items.extend(arxiv_items)
+        else:
+            add_log("-> Arxiv: Skipped (disabled in Sources settings).")
+
+        gh_cfg = cfg.get("github", {})
+        if gh_cfg.get("enabled", True):
+            add_log("Crawling GitHub API for trending AI repositories...")
+            github_items = fetcher.fetch_github_trending(
+                keywords=gh_cfg.get("keywords"),
+                limit=gh_cfg.get("limit", 15)
+            )
+            add_log(f"-> GitHub Trending: Found {len(github_items)} repositories.")
+            all_items.extend(github_items)
+        else:
+            add_log("-> GitHub Trending: Skipped (disabled in Sources settings).")
+
+        ph_cfg = cfg.get("product_hunt", {})
+        if ph_cfg.get("enabled", True):
+            add_log("Crawling Product Hunt tech launch RSS feed...")
+            ph_items = fetcher.fetch_product_hunt_ai()
+            add_log(f"-> Product Hunt: Found {len(ph_items)} launches.")
+            all_items.extend(ph_items)
+        else:
+            add_log("-> Product Hunt: Skipped (disabled in Sources settings).")
+
+        lb_cfg = cfg.get("lab_blogs", {})
+        if lb_cfg.get("enabled", True):
+            add_log("Crawling AI Lab blogs (OpenAI, DeepMind, Anthropic news)...")
+            lab_items = fetcher.fetch_lab_blogs()
+            add_log(f"-> Lab Blogs: Found {len(lab_items)} articles.")
+            all_items.extend(lab_items)
+        else:
+            add_log("-> Lab Blogs: Skipped (disabled in Sources settings).")
         unique_items = []
         seen_urls = set()
         for item in all_items:
@@ -292,6 +336,21 @@ async def update_email_settings(payload: EmailSettingsPayload):
     if payload.smtp_password.strip():
         database.save_setting(DB_PATH, "smtp_password", payload.smtp_password.strip())
     return {"message": "Email settings saved successfully."}
+
+# --- Scraper settings endpoints ---
+
+@app.get("/api/settings/scraper")
+async def get_scraper_settings():
+    """Returns the current per-source scraper configuration."""
+    return database.get_scraper_config(DB_PATH)
+
+@app.post("/api/settings/scraper")
+async def update_scraper_settings(payload: ScraperSettingsPayload):
+    """Saves the scraper configuration. Changes take effect on the next sync."""
+    if not isinstance(payload.config, dict):
+        raise HTTPException(status_code=400, detail="config must be a JSON object.")
+    database.save_scraper_config(DB_PATH, payload.config)
+    return {"message": "Scraper settings saved. Changes apply on next sync."}
 
 # --- Subscriber endpoints ---
 

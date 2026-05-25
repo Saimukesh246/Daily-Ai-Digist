@@ -285,3 +285,38 @@ def get_active_subscribers(db_path):
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+# --- Scraper configuration ---
+
+DEFAULT_SCRAPER_CONFIG = {
+    "hacker_news":  {"enabled": True,  "limit": 20},
+    "reddit":       {"enabled": True,  "subreddits": ["MachineLearning", "singularity", "ArtificialInteligence"], "limit": 10},
+    "huggingface":  {"enabled": True,  "limit": 15},
+    "arxiv":        {"enabled": True,  "limit": 15},
+    "github":       {"enabled": True,  "keywords": ["ai", "llm", "agent", "machine-learning", "neural"], "limit": 15},
+    "product_hunt": {"enabled": True},
+    "lab_blogs":    {"enabled": True},
+}
+
+
+def get_scraper_config(db_path):
+    """Returns the current scraper config merged with defaults for any missing keys."""
+    raw = get_setting(db_path, "scraper_config", None)
+    if raw:
+        try:
+            stored = json.loads(raw)
+            config = {k: dict(v) for k, v in DEFAULT_SCRAPER_CONFIG.items()}
+            for key, val in stored.items():
+                if key in config:
+                    config[key].update(val)
+            return config
+        except Exception:
+            pass
+    import copy
+    return copy.deepcopy(DEFAULT_SCRAPER_CONFIG)
+
+
+def save_scraper_config(db_path, config):
+    """Saves the scraper configuration dict to the settings table as JSON."""
+    save_setting(db_path, "scraper_config", json.dumps(config))

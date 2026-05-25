@@ -850,6 +850,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 loadEmailSettings();
                 loadSubscribers();
             }
+            if (target === "sources") {
+                loadScraperConfig();
+            }
         });
     });
 
@@ -1053,6 +1056,181 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     btnSendTest && btnSendTest.addEventListener("click", sendTestEmail);
+
+    // --- SCRAPER / SOURCES SETTINGS ---
+
+    const scraperSourceList  = document.getElementById("scraper-source-list");
+    const scraperStatusText  = document.getElementById("scraper-status-text");
+    const btnSaveScraper     = document.getElementById("btn-save-scraper");
+
+    let scraperConfig = null;
+
+    const SCRAPER_SOURCES = [
+        { key: "hacker_news",  label: "Hacker News",         icon: "fa-brands fa-hacker-news", color: "#ff6600", hasLimit: true  },
+        { key: "reddit",       label: "Reddit",               icon: "fa-brands fa-reddit",      color: "#ff4500", hasLimit: true,  hasTags: "subreddits", tagsLabel: "Subreddits", tagsHint: "e.g. MachineLearning" },
+        { key: "huggingface",  label: "Hugging Face Papers",  icon: "fa-solid fa-circle-nodes", color: "#ffd21e", hasLimit: true  },
+        { key: "arxiv",        label: "Arxiv Preprints",      icon: "fa-solid fa-graduation-cap", color: "#b31b1b", hasLimit: true },
+        { key: "github",       label: "GitHub Trending",      icon: "fa-brands fa-github",      color: "#e6edf3", hasLimit: true,  hasTags: "keywords",   tagsLabel: "Search Keywords", tagsHint: "e.g. llm" },
+        { key: "product_hunt", label: "Product Hunt",         icon: "fa-solid fa-cat",           color: "#da552f", hasLimit: false },
+        { key: "lab_blogs",    label: "AI Lab Blogs",         icon: "fa-solid fa-flask",         color: "#00f0ff", hasLimit: false },
+    ];
+
+    async function loadScraperConfig() {
+        if (!scraperSourceList) return;
+        scraperSourceList.innerHTML = '<p class="settings-explanation">Loading sources...</p>';
+        try {
+            const res = await fetch("/api/settings/scraper");
+            if (!res.ok) throw new Error("Failed to load scraper settings.");
+            scraperConfig = await res.json();
+            renderScraperSources();
+        } catch (err) {
+            scraperSourceList.innerHTML = `<p class="settings-explanation" style="color:var(--accent-red);">Error: ${err.message}</p>`;
+        }
+    }
+
+    function makeChip(text) {
+        const span = document.createElement("span");
+        span.className = "tag-chip";
+        span.dataset.value = text;
+        span.innerHTML = `${text}<button type="button" class="tag-chip-remove" title="Remove"><i class="fa-solid fa-xmark"></i></button>`;
+        return span;
+    }
+
+    function renderScraperSources() {
+        if (!scraperSourceList || !scraperConfig) return;
+        scraperSourceList.innerHTML = "";
+
+        SCRAPER_SOURCES.forEach(src => {
+            const srcCfg  = scraperConfig[src.key] || {};
+            const enabled = srcCfg.enabled !== false;
+
+            const row = document.createElement("div");
+            row.className  = "scraper-source-row";
+            row.dataset.key = src.key;
+
+            // Header: icon + name + toggle
+            const header = document.createElement("div");
+            header.className = "scraper-source-header";
+            header.innerHTML = `
+                <div class="scraper-source-icon" style="color:${src.color}">
+                    <i class="${src.icon}"></i>
+                </div>
+                <span class="scraper-source-name">${src.label}</span>
+                <label class="toggle-switch-label" style="margin-left:auto;padding:0;">
+                    <input type="checkbox" class="scraper-toggle" data-key="${src.key}" ${enabled ? "checked" : ""}>
+                    <span class="toggle-switch-track"><span class="toggle-switch-knob"></span></span>
+                </label>
+            `;
+            row.appendChild(header);
+
+            // Extra controls (limit and/or tag chips)
+            if (src.hasLimit || src.hasTags) {
+                const extra = document.createElement("div");
+                extra.className = "scraper-source-extra";
+
+                if (src.hasLimit) {
+                    const limitDiv = document.createElement("div");
+                    limitDiv.className = "scraper-limit-row";
+                    limitDiv.innerHTML = `
+                        <span>Max results:</span>
+                        <input type="number" class="scraper-limit-input" data-key="${src.key}"
+                               min="1" max="50" value="${srcCfg.limit || 15}">
+                    `;
+                    extra.appendChild(limitDiv);
+                }
+
+                if (src.hasTags) {
+                    const tagsGroup = document.createElement("div");
+                    tagsGroup.className = "scraper-tags-group";
+                    tagsGroup.innerHTML = `<div class="scraper-tags-label">${src.tagsLabel}</div>`;
+
+                    const wrapper = document.createElement("div");
+                    wrapper.className = "tag-input-wrapper";
+                    wrapper.dataset.key   = src.key;
+                    wrapper.dataset.field = src.hasTags;
+
+                    const tags = srcCfg[src.hasTags] || [];
+                    tags.forEach(t => wrapper.appendChild(makeChip(t)));
+
+                    const bareInput = document.createElement("input");
+                    bareInput.type        = "text";
+                    bareInput.className   = "tag-bare-input";
+                    bareInput.placeholder = src.tagsHint || "Type and press Enter";
+                    wrapper.appendChild(bareInput);
+
+                    bareInput.addEventListener("keydown", e => {
+                        if (e.key === "Enter" || e.key === ",") {
+                            e.preventDefault();
+                            const val = bareInput.value.trim().replace(/,/g, "");
+                            if (val) { wrapper.insertBefore(makeChip(val), bareInput); bareInput.value = ""; }
+                        }
+                        if (e.key === "Backspace" && !bareInput.value) {
+                            const chips = wrapper.querySelectorAll(".tag-chip");
+                            if (chips.length) chips[chips.length - 1].remove();
+                        }
+                    });
+
+                    wrapper.addEventListener("click", () => bareInput.focus());
+                    tagsGroup.appendChild(wrapper);
+                    extra.appendChild(tagsGroup);
+                }
+
+                row.appendChild(extra);
+            }
+
+            scraperSourceList.appendChild(row);
+        });
+
+        // Delegate chip removal to the container
+        scraperSourceList.addEventListener("click", e => {
+            const btn = e.target.closest(".tag-chip-remove");
+            if (btn) btn.closest(".tag-chip").remove();
+        });
+    }
+
+    async function saveScraperConfig() {
+        if (!scraperConfig) return;
+        const newConfig = {};
+
+        SCRAPER_SOURCES.forEach(src => {
+            const row = scraperSourceList && scraperSourceList.querySelector(`.scraper-source-row[data-key="${src.key}"]`);
+            if (!row) return;
+
+            const toggle = row.querySelector(".scraper-toggle");
+            const entry  = { enabled: toggle ? toggle.checked : true };
+
+            if (src.hasLimit) {
+                const li = row.querySelector(".scraper-limit-input");
+                entry.limit = li ? (parseInt(li.value) || 15) : 15;
+            }
+
+            if (src.hasTags) {
+                const wrapper = row.querySelector(".tag-input-wrapper");
+                entry[src.hasTags] = wrapper
+                    ? Array.from(wrapper.querySelectorAll(".tag-chip")).map(c => c.dataset.value).filter(Boolean)
+                    : [];
+            }
+
+            newConfig[src.key] = entry;
+        });
+
+        if (scraperStatusText) { scraperStatusText.textContent = "Saving…"; scraperStatusText.style.color = "var(--accent-cyan)"; }
+
+        try {
+            const res = await fetch("/api/settings/scraper", {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify({ config: newConfig }),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || "Save failed.");
+            scraperConfig = newConfig;
+            if (scraperStatusText) { scraperStatusText.textContent = "✓ Saved. Changes apply on next sync."; scraperStatusText.style.color = "var(--accent-green)"; }
+        } catch (err) {
+            if (scraperStatusText) { scraperStatusText.textContent = `Error: ${err.message}`; scraperStatusText.style.color = "var(--accent-red)"; }
+        }
+    }
+
+    btnSaveScraper && btnSaveScraper.addEventListener("click", saveScraperConfig);
 
     // Reset tab to AI Model whenever the settings modal reopens
     const originalSettingsToggleHandler = () => {
