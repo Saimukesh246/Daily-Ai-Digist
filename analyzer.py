@@ -128,19 +128,26 @@ def run_offline_fallback(date_str, raw_items):
 
     def _why_tool(item):
         t = _ctx(item)
-        if any(w in t for w in ["agent", "autonom", "multi-step", "orchestrat"]):
-            return "Autonomous agent tooling is replacing hand-written glue-code, and this project is ahead of that adoption curve."
-        if any(w in t for w in ["security", "vulnerab", "audit", "pentest"]):
-            return "AI security tooling is becoming a production requirement — this fills a gap most platform stacks leave unaddressed."
+        # Most-specific checks first so similar tools get differentiated strings
+        if any(w in t for w in ["observab", "monitor", "session replay", "cost track", "telemetr"]):
+            return "Observability is the missing layer in most agent deployments — without session replay and cost tracking, debugging production agents is nearly impossible."
+        if any(w in t for w in ["memory", "knowledge base", "persistent"]):
+            return "Persistent memory and structured knowledge management are what separate demo chatbots from production AI assistants that actually improve over time."
+        if any(w in t for w in ["security", "vulnerab", "audit", "pentest", "scam", "threat"]):
+            return "AI security tooling is a production requirement — this fills a critical gap that most platform stacks leave completely unaddressed."
+        if any(w in t for w in ["browser", "social media", "tweet", "post", "scrape"]):
+            return "Browser automation powered by AI reasoning unlocks entire workflow categories that previously required dedicated human operators."
         if any(w in t for w in ["rag", "retrieval", "embedding", "search", "vector"]):
-            return "RAG infrastructure is now table-stakes for enterprise AI — tools that simplify it are seeing the fastest adoption."
-        if any(w in t for w in ["code", "coding", "review", "github", "developer"]):
-            return "Developer-facing AI tools that eliminate boilerplate directly compress time-to-ship for engineering teams of every size."
-        if any(w in t for w in ["browser", "web", "scrape", "automat"]):
-            return "Browser automation combined with AI reasoning unlocks workflows previously requiring dedicated human operators."
-        if any(w in t for w in ["social", "content", "marketing", "generate"]):
-            return "Content generation tooling at this quality level is compressing creative production cycles from days to minutes."
-        return "Packages significant engineering effort into a reusable tool that would otherwise take weeks to build from scratch."
+            return "RAG infrastructure is table-stakes for enterprise AI — tools that simplify building and scaling it are seeing the fastest adoption rates."
+        if any(w in t for w in ["code", "coding", "review", "pull request", "pr "]):
+            return "Developer tooling that eliminates AI integration boilerplate directly compresses time-to-ship for engineering teams of every size."
+        if any(w in t for w in ["gui", "interface", "desktop", "workspace", "claw"]):
+            return "GUI-layer interfaces lower the entry barrier dramatically, letting non-developer users unlock the full power of frontier AI models."
+        if any(w in t for w in ["agent", "autonom", "multi-step", "orchestrat", "workflow"]):
+            return "Agent orchestration tooling is maturing fast — projects that nail the developer experience will define how production agents are built for years."
+        if any(w in t for w in ["content", "marketing", "generat", "creat"]):
+            return "Content generation tooling at this quality level compresses creative production cycles from days to minutes."
+        return "Packages significant engineering effort into a reusable, installable tool that would otherwise take weeks to build from scratch."
 
     def _why_research(item):
         t = _ctx(item)
@@ -157,18 +164,28 @@ def run_offline_fallback(date_str, raw_items):
             if any(w in t for w in ["agent", "llm", "autonom"]):
                 return "Rapid GitHub traction signals this codebase is filling a gap that existing LLM frameworks have not addressed."
             return "Community momentum this strong typically indicates real-world pain being solved rather than academic novelty."
-        # Research paper
-        if any(w in t for w in ["benchmark", "state-of-the-art", "outperform", "sota"]):
-            return "New state-of-the-art results in key benchmarks define the architecture choices of the next model generation."
-        if any(w in t for w in ["efficient", "faster", "compress", "quantiz", "distil"]):
-            return "Efficiency techniques published in papers like this typically get absorbed into mainstream frameworks within months."
-        if any(w in t for w in ["agent", "reasoning", "planning", "multi-step"]):
-            return "Advances in reasoning and planning directly determine how reliably agents can be deployed in production workflows."
-        if any(w in t for w in ["multimodal", "vision", "audio", "video"]):
-            return "Multimodal capability research is laying the groundwork for the next generation of human-computer interaction."
-        if any(w in t for w in ["safety", "align", "interpret", "explain"]):
+        # Research paper — ordered most-specific to broadest so each paper lands a unique string
+        if any(w in t for w in ["scam", "fraud", "phish", "malware", "attack", "adversar", "malicious"]):
+            return "As AI agents gain access to sensitive user workflows, detecting and preventing adversarial misuse becomes a foundational safety requirement."
+        if any(w in t for w in ["diffusion", "posterior", "sampl", "generative", "synthesiz", "image gen"]):
+            return "Generative model research drives the next generation of image, video, and data synthesis tools — improvements here ripple through every creative and scientific application."
+        if any(w in t for w in ["benchmark", "state-of-the-art", "outperform", "sota", "evaluat", "leaderboard"]):
+            return "New state-of-the-art benchmark results set the bar that the next wave of model architectures will be designed to beat."
+        if any(w in t for w in ["efficient", "faster", "compress", "quantiz", "distil", "lightweight", "prune"]):
+            return "Efficiency techniques published in research papers like this get absorbed into mainstream frameworks within months, lowering the compute cost for everyone."
+        if any(w in t for w in ["agent", "reasoning", "planning", "multi-step", "tool use", "tool-use"]):
+            return "Advances in reasoning and planning directly determine how reliably autonomous agents can be deployed in production without constant human oversight."
+        if any(w in t for w in ["multimodal", "vision", "audio", "video", "image", "visual"]):
+            return "Multimodal capability research is laying the groundwork for the next generation of human-computer interaction beyond text-only interfaces."
+        if any(w in t for w in ["safety", "align", "interpret", "explain", "bias", "fairness"]):
             return "Interpretability and alignment research is becoming a prerequisite for deploying AI in regulated or high-stakes environments."
-        return "Academic preprints published today often become engineering baselines within 12–18 months — worth tracking early."
+        if any(w in t for w in ["transformer", "attention", "architectur", "layer", "neural", "network"]):
+            return "Architectural improvements to core neural network components compound across every downstream application — small gains here matter significantly."
+        if any(w in t for w in ["language model", "llm", "gpt", "pretraining", "fine-tun", "finetun"]):
+            return "Language model research shapes the capabilities of tools developers and enterprises will rely on over the next 12–18 months."
+        if any(w in t for w in ["retrieval", "rag", "embedding", "knowledge", "search"]):
+            return "Retrieval and knowledge research directly improves the accuracy and reliability of production RAG systems used across enterprise deployments."
+        return "Research published today across AI subfields tends to become engineering standard practice within 12–18 months — worth bookmarking early."
 
     # ── trend title + paragraphs ───────────────────────────────────────────────
 

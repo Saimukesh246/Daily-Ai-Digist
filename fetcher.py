@@ -1,3 +1,4 @@
+import re
 import requests
 import json
 import xml.etree.ElementTree as ET
@@ -269,27 +270,55 @@ def fetch_lab_blogs():
             except Exception as e:
                 logger.error(f"Error parsing RSS for {feed['name']}: {e}")
                 
-    # Anthropic lacks a standard stable RSS feed, let's scrape their news directory frontpage safely
+    # Anthropic lacks a standard stable RSS feed, scrape their news directory frontpage
     anthropic_url = "https://www.anthropic.com/news"
     response = safe_request(anthropic_url)
     if response:
         try:
             soup = BeautifulSoup(response.content, "html.parser")
-            # Anthropic news links are usually inside articles or post headers
+            seen_hrefs = set()
             for post in soup.find_all("a", href=True):
                 href = post["href"]
-                if "/news/" in href and len(href) > 6:
-                    title = post.get_text().strip()
-                    if not title or len(title) < 15:
-                        continue
-                    full_url = f"https://www.anthropic.com{href}" if href.startswith("/") else href
-                    articles.append({
-                        "source": "Anthropic Blog",
-                        "title": title,
-                        "description": f"Latest release and research announcement on Anthropic's blog.",
-                        "url": full_url,
-                        "category": "news"
-                    })
+                if "/news/" not in href or len(href) <= 6:
+                    continue
+                full_url = f"https://www.anthropic.com{href}" if href.startswith("/") else href
+                if full_url in seen_hrefs:
+                    continue
+                seen_hrefs.add(full_url)
+
+                raw_title = post.get_text(" ", strip=True)
+
+                # Strip leading date stamp: "May 27, 2026" or "May 27, 2026, "
+                clean = re.sub(
+                    r'^(?:January|February|March|April|May|June|July|August|'
+                    r'September|October|November|December)\s+\d{1,2},\s+\d{4}\s*,?\s*',
+                    '', raw_title
+                ).strip()
+                # Strip leading category words Anthropic injects into link text
+                clean = re.sub(
+                    r'^(?:Announcements?|Products?|Research|Policy|News|Blog|'
+                    r'Updates?|Claude|API|Model Card)\s+(?=[A-Z])',
+                    '', clean
+                ).strip()
+
+                if len(clean) < 15:
+                    continue
+
+                # Build a real description from the cleaned title
+                slug = href.rstrip("/").split("/")[-1].replace("-", " ").title()
+                description = (
+                    f"{clean} — new from Anthropic's blog."
+                    if len(clean) < 120
+                    else clean[:200] + "..."
+                )
+
+                articles.append({
+                    "source": "Anthropic Blog",
+                    "title": clean,
+                    "description": description,
+                    "url": full_url,
+                    "category": "news"
+                })
         except Exception as e:
             logger.error(f"Error crawling Anthropic blog: {e}")
             
