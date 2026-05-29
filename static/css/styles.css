@@ -604,18 +604,6 @@ body {
     margin-top: 3px;
 }
 
-.tldr-box {
-    background: rgba(0, 240, 255, 0.03);
-    border: 1px dashed rgba(0, 240, 255, 0.2);
-    border-radius: var(--border-radius-sm);
-    padding: 10px 14px;
-    font-size: 12.5px;
-}
-
-.tldr-box strong {
-    color: var(--accent-cyan);
-}
-
 .news-footer {
     display: flex;
     justify-content: space-between;
