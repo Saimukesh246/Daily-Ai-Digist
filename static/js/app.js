@@ -254,9 +254,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         ${news.why_it_matters}
                     </div>
                     ${featuresHtml}
-                    <div class="tldr-box">
-                        <strong>TL;DR:</strong> ${news.tldr}
-                    </div>
                     <div class="news-footer">
                         <div class="who-cares-badge">
                             <span>Impact:</span> ${news.who_should_care}

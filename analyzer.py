@@ -44,14 +44,6 @@ def run_offline_fallback(date_str, raw_items):
                 return text[:idx + 1]
         return text[:max_chars].rstrip(" ,;") + ("..." if len(text) > max_chars else "")
 
-    def _tldr(item):
-        desc = (item.get("description") or "").strip()
-        sentence = _first_sentence(desc)
-        if sentence and len(sentence) > 25:
-            return sentence
-        title = item.get("title", "").split("|")[0].strip()
-        return f"{title} — a key development in today's AI landscape."
-
     def _real_world_impact(item):
         t = _ctx(item)
         if any(w in t for w in ["agent", "autonom", "orchestrat"]):
@@ -248,7 +240,6 @@ def run_offline_fallback(date_str, raw_items):
             "key_features": _key_features(item),
             "real_world_impact": _real_world_impact(item),
             "who_should_care": _who_cares(item),
-            "tldr": _tldr(item),
             "link": item["url"]
         })
 
@@ -477,7 +468,6 @@ RESPONSE SCHEMA:
       "key_features": ["Crucial feature or takeaway 1", "Crucial feature or takeaway 2", "Crucial feature or takeaway 3"],
       "real_world_impact": "Explain how this changes the current industry landscape or developer standard.",
       "who_should_care": "e.g., AI Developers, CIOs, Technical Founders, SaaS Engineers",
-      "tldr": "A 1-sentence bottom-line takeaway.",
       "link": "Exact source URL"
     }}
   ],
