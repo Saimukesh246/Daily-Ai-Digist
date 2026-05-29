@@ -22,204 +22,337 @@ def clean_gemini_json(response_text):
 def run_offline_fallback(date_str, raw_items):
     """Compiles real crawled news items into the strict newsletter JSON schema without Gemini."""
     logger.info("No Gemini API key available. Running intelligent offline fallback...")
-    
-    # Classify raw items into lists
-    news_items = [x for x in raw_items if x["category"] == "news"]
-    tool_items = [x for x in raw_items if x["category"] == "tool"]
+
+    news_items  = [x for x in raw_items if x["category"] == "news"]
+    tool_items  = [x for x in raw_items if x["category"] == "tool"]
     paper_items = [x for x in raw_items if x["category"] == "paper"]
-    repo_items = [x for x in raw_items if x["category"] == "repo"]
-    
-    # 1. Trend Overview Paragraphs
-    title = "The Acceleration of Open-Source Agents and Model Specialization"
-    p1 = "Today's artificial intelligence landscape continues its rapid decentralization, driven by substantial developments in developer-focused tooling and open-source models. The community is demonstrating a marked shift away from simple chatbot wrappers toward specialized agentic architectures capable of structured, multi-step actions. Rather than relying entirely on massive proprietary models, developers are increasingly constructing hybrid workflows combining local smaller language models (SLMs) with robust RAG (Retrieval-Augmented Generation) systems."
-    p2 = f"On {date_str}, data aggregated from Hacker News, Hugging Face, GitHub, and major AI research labs indicates high-traction releases in developer frameworks and custom agents. With open-source preprints on Arxiv accelerating, the gap between cutting-edge laboratory research and practical enterprise deployment is narrowing. The focus is pivoting from raw parameter size to cost efficiency, context retrieval quality, and deterministic execution environments."
-    
+    repo_items  = [x for x in raw_items if x["category"] == "repo"]
+
+    # ── per-item helper functions ──────────────────────────────────────────────
+
+    def _ctx(item):
+        """Return lowercase combined title+description for keyword matching."""
+        return (item.get("title", "") + " " + (item.get("description") or "")).lower()
+
+    def _first_sentence(text, max_chars=180):
+        if not text:
+            return ""
+        text = text.strip().split("\n")[0]
+        for delim in [". ", "! ", "? "]:
+            idx = text.find(delim)
+            if 20 < idx < max_chars:
+                return text[:idx + 1]
+        return text[:max_chars].rstrip(" ,;") + ("..." if len(text) > max_chars else "")
+
+    def _tldr(item):
+        desc = (item.get("description") or "").strip()
+        sentence = _first_sentence(desc)
+        if sentence and len(sentence) > 25:
+            return sentence
+        title = item.get("title", "").split("|")[0].strip()
+        return f"{title} — a key development in today's AI landscape."
+
+    def _real_world_impact(item):
+        t = _ctx(item)
+        if any(w in t for w in ["agent", "autonom", "orchestrat"]):
+            return "Reduces engineering overhead for reliable AI agents, letting smaller teams tackle automation that previously required dedicated infrastructure."
+        if any(w in t for w in ["open source", "llama", "weights", "hugging"]):
+            return "Lowers the cost floor for AI deployment and removes vendor lock-in, giving teams more architectural flexibility."
+        if any(w in t for w in ["developer", "api", "sdk", "library", "framework"]):
+            return "Compresses weeks of custom integration work into hours, directly increasing shipping velocity for AI-powered product teams."
+        if any(w in t for w in ["security", "safety", "audit", "compliance"]):
+            return "Provides concrete tooling for teams navigating AI compliance requirements, reducing legal and reputational exposure."
+        if any(w in t for w in ["fund", "acqui", "invest", "billion"]):
+            return "Capital concentration in this area accelerates hiring, research pace, and product cycles across the broader ecosystem."
+        return "Contributes to the ongoing maturation of AI infrastructure, making the technology more accessible and cost-effective."
+
+    def _why_news(item):
+        t = _ctx(item)
+        if any(w in t for w in ["open source", "open-source", "llama", "weights", "hugging"]):
+            return "Accelerates AI democratisation by making powerful models available to teams without proprietary API budgets or GPU clusters."
+        if any(w in t for w in ["agent", "autonom", "orchestrat", "workflow"]):
+            return "Marks another step in the shift from single-turn AI queries toward persistent, goal-driven agents capable of complex multi-step execution."
+        if any(w in t for w in ["api", "sdk", "developer", "library", "framework"]):
+            return "Directly lowers the integration barrier for developers, compressing what used to take weeks of boilerplate into a few API calls."
+        if any(w in t for w in ["fund", "billion", "invest", "acqui", "ipo"]):
+            return "Signals continued institutional confidence in AI infrastructure investment, which accelerates both research pace and commercial adoption."
+        if any(w in t for w in ["safety", "align", "risk", "bias", "audit"]):
+            return "Addresses one of the most critical open problems in AI deployment — ensuring systems remain reliable, fair, and auditable at scale."
+        if any(w in t for w in ["multimodal", "vision", "audio", "video", "image"]):
+            return "Expands what AI can perceive and reason about, moving beyond text-only interfaces toward richer human-computer interaction."
+        if any(w in t for w in ["china", "regulation", "policy", "government", "law"]):
+            return "Geopolitical and regulatory shifts in AI are reshaping how global teams plan infrastructure and data compliance strategies."
+        if any(w in t for w in ["benchmark", "state-of-the-art", "sota", "evaluat"]):
+            return "New benchmarks redefine what 'good' looks like — affecting model selection, fine-tuning targets, and procurement decisions industry-wide."
+        return "Represents a meaningful inflection point in how AI systems are built, evaluated, or deployed across the industry."
+
+    def _key_features(item):
+        desc = (item.get("description") or "").strip()
+        features = []
+        # Pipe-separated metadata is common in scraped HN/Reddit descriptions
+        parts = [p.strip() for p in desc.split("|") if p.strip() and len(p.strip()) > 8]
+        for p in parts[:3]:
+            cap = p[0].upper() + p[1:]
+            features.append(cap if cap.endswith(".") else cap + ".")
+        t = _ctx(item)
+        fillers = []
+        if any(w in t for w in ["open source", "github", "repo"]):
+            fillers.append("Open-source codebase with active community contributions.")
+        if any(w in t for w in ["api", "sdk"]):
+            fillers.append("API-first design enabling rapid integration into existing pipelines.")
+        if any(w in t for w in ["benchmark", "performance", "faster"]):
+            fillers.append("Performance benchmarks published alongside the release.")
+        fillers += [
+            "Detailed documentation and real-world usage examples included.",
+            "Compatible with major cloud providers and local deployments.",
+            "Community-validated through production usage at scale.",
+        ]
+        for f in fillers:
+            if len(features) >= 3:
+                break
+            if f not in features:
+                features.append(f)
+        return features[:3]
+
+    def _who_cares(item):
+        t = _ctx(item)
+        if any(w in t for w in ["enterprise", "business", "ceo", "cto", "executive"]):
+            return "CTOs, AI product leads, and enterprise software architects."
+        if any(w in t for w in ["research", "paper", "arxiv", "benchmark", "academic"]):
+            return "ML researchers, PhD students, and applied AI scientists."
+        if any(w in t for w in ["startup", "fund", "invest", "vc", "billion"]):
+            return "Founders, investors, and AI product strategists."
+        if any(w in t for w in ["security", "vulnerab", "compliance", "audit"]):
+            return "Security engineers, compliance teams, and AI governance leads."
+        return "AI engineers, full-stack developers, and technical founders."
+
+    def _why_tool(item):
+        t = _ctx(item)
+        if any(w in t for w in ["agent", "autonom", "multi-step", "orchestrat"]):
+            return "Autonomous agent tooling is replacing hand-written glue-code, and this project is ahead of that adoption curve."
+        if any(w in t for w in ["security", "vulnerab", "audit", "pentest"]):
+            return "AI security tooling is becoming a production requirement — this fills a gap most platform stacks leave unaddressed."
+        if any(w in t for w in ["rag", "retrieval", "embedding", "search", "vector"]):
+            return "RAG infrastructure is now table-stakes for enterprise AI — tools that simplify it are seeing the fastest adoption."
+        if any(w in t for w in ["code", "coding", "review", "github", "developer"]):
+            return "Developer-facing AI tools that eliminate boilerplate directly compress time-to-ship for engineering teams of every size."
+        if any(w in t for w in ["browser", "web", "scrape", "automat"]):
+            return "Browser automation combined with AI reasoning unlocks workflows previously requiring dedicated human operators."
+        if any(w in t for w in ["social", "content", "marketing", "generate"]):
+            return "Content generation tooling at this quality level is compressing creative production cycles from days to minutes."
+        return "Packages significant engineering effort into a reusable tool that would otherwise take weeks to build from scratch."
+
+    def _why_research(item):
+        t = _ctx(item)
+        cat = item.get("category", "")
+        if cat == "repo":
+            desc = (item.get("description") or "").lower()
+            if "stars:" in desc:
+                try:
+                    stars = int(desc.split("stars:")[-1].split("|")[0].strip().replace(",", ""))
+                    if stars >= 400:
+                        return f"With {stars:,}+ stars in a short window, community adoption confirms this solves a genuine unmet need."
+                except Exception:
+                    pass
+            if any(w in t for w in ["agent", "llm", "autonom"]):
+                return "Rapid GitHub traction signals this codebase is filling a gap that existing LLM frameworks have not addressed."
+            return "Community momentum this strong typically indicates real-world pain being solved rather than academic novelty."
+        # Research paper
+        if any(w in t for w in ["benchmark", "state-of-the-art", "outperform", "sota"]):
+            return "New state-of-the-art results in key benchmarks define the architecture choices of the next model generation."
+        if any(w in t for w in ["efficient", "faster", "compress", "quantiz", "distil"]):
+            return "Efficiency techniques published in papers like this typically get absorbed into mainstream frameworks within months."
+        if any(w in t for w in ["agent", "reasoning", "planning", "multi-step"]):
+            return "Advances in reasoning and planning directly determine how reliably agents can be deployed in production workflows."
+        if any(w in t for w in ["multimodal", "vision", "audio", "video"]):
+            return "Multimodal capability research is laying the groundwork for the next generation of human-computer interaction."
+        if any(w in t for w in ["safety", "align", "interpret", "explain"]):
+            return "Interpretability and alignment research is becoming a prerequisite for deploying AI in regulated or high-stakes environments."
+        return "Academic preprints published today often become engineering baselines within 12–18 months — worth tracking early."
+
+    # ── trend title + paragraphs ───────────────────────────────────────────────
+
+    def _derive_trend():
+        all_text = " ".join(_ctx(i) for i in raw_items)
+        sources_present = sorted({i["source"] for i in raw_items})
+        source_label = ", ".join(sources_present[:4]) or "multiple AI sources"
+
+        themes = [
+            (["agent", "autonomous", "multi-agent", "orchestrat", "agentic"],
+             "The Rise of Autonomous AI Agents Across Production Stacks",
+             "Today's AI landscape is increasingly defined not by model releases but by the systems built around them. Autonomous agents that plan, execute, and verify multi-step tasks are moving from research prototypes into production deployments across software engineering, data analysis, and enterprise workflows.",
+             f"On {date_str}, signals aggregated from {source_label} point to agent orchestration as the dominant engineering challenge. Teams are no longer asking whether AI can do a task autonomously — they are asking how to make that automation reliable, observable, and auditable at scale."),
+            (["open source", "open-source", "llama", "mistral", "qwen", "weights"],
+             "Open-Source Models Continue Closing the Gap with Frontier Labs",
+             "The open-weight AI ecosystem is evolving faster than most predicted. Community-trained and fine-tuned models are matching closed models on key benchmarks, and the tooling to run them efficiently — quantization, structured outputs, local inference — is now mature enough for production use.",
+             f"On {date_str}, releases tracked across {source_label} confirm open-source momentum: teams previously locked into proprietary APIs are migrating toward self-hosted models driven by cost savings, data privacy requirements, and the ability to fine-tune for domain-specific tasks."),
+            (["benchmark", "evaluat", "performance", "evals", "audit", "test"],
+             "AI Evaluation Frameworks Are Struggling to Keep Pace with Capabilities",
+             "As frontier models improve at accelerating rates, the benchmarks used to measure them are falling behind. Static academic tests can be saturated in months, and the field is converging on a consensus: meaningful evaluation must measure real-world task completion, not narrow leaderboard metrics.",
+             f"On {date_str}, research preprints and community discussion from {source_label} highlight the evaluation crisis — new frameworks that test agents on long-horizon tasks, adversarial prompting, and grounded reasoning are emerging to replace saturated academic benchmarks."),
+            (["tool", "sdk", "library", "framework", "developer", "api"],
+             "Developer Tooling Is Now the Primary AI Competitive Battleground",
+             "With foundation models increasingly commoditized, the competitive edge is shifting to the developer experience layer. SDKs, observability tools, prompt management, and deployment infrastructure are where the next cycle of AI value creation is concentrated.",
+             f"On {date_str}, trending repositories and launches tracked via {source_label} confirm the pattern: the fastest-growing AI projects are not new models — they are the orchestration layers, monitoring dashboards, and workflow tools built on top of existing ones."),
+            (["security", "safety", "alignment", "risk", "vulnerab", "compliance"],
+             "AI Security and Alignment Move from Theory to Engineering Requirements",
+             "The question of how to build AI systems that remain safe, reliable, and auditable under adversarial conditions has moved from academic debate to active engineering priority. Red-teaming, runtime guardrails, and output validation are entering standard deployment checklists.",
+             f"On {date_str}, security-focused repositories and lab blog announcements from {source_label} reflect a shared inflection point: organisations shipping AI into regulated or high-stakes environments are now being required to demonstrate explicit safety and monitoring mechanisms."),
+        ]
+        for keywords, title, p1, p2 in themes:
+            if any(kw in all_text for kw in keywords):
+                return title, p1, p2
+        return (
+            "AI Capabilities and Infrastructure Continue Their Rapid Convergence",
+            "Today's artificial intelligence ecosystem shows simultaneous momentum across model quality, infrastructure cost reduction, and developer tooling maturity. The speed at which research breakthroughs are translated into deployable systems continues to compress, reshaping what small teams can build.",
+            f"On {date_str}, data aggregated from across the AI community confirms the trend: the boundary between cutting-edge research and production-ready implementation is thinner than it has ever been, and the teams moving fastest treat AI as infrastructure rather than novelty."
+        )
+
+    # ── assemble all sections ──────────────────────────────────────────────────
+
+    # 1. Trend Overview
+    trend_title, trend_p1, trend_p2 = _derive_trend()
+
     # 2. Biggest News Today
-    biggest_news = []
     default_news = [
-        {
-            "title": "Anthropic releases new research on LLM internal activations",
-            "url": "https://www.anthropic.com/news",
-            "source": "Anthropic Blog",
-            "description": "A major breakthrough in mechanising interpretability, demonstrating dictionary learning techniques mapping concepts directly to neuron layers."
-        },
-        {
-            "title": "OpenAI introduces enhanced tooling for developer workflows",
-            "url": "https://openai.com/news/rss/",
-            "source": "OpenAI Blog",
-            "description": "Updates to assistant APIs, structured outputs integration, and advanced control features for agent developers."
-        }
+        {"title": "Anthropic publishes new research on LLM interpretability", "url": "https://www.anthropic.com/news", "source": "Anthropic Blog",
+         "description": "New mechanistic interpretability research maps abstract concepts to individual neuron clusters inside transformer models using dictionary learning techniques."},
+        {"title": "OpenAI announces updated developer tooling for agent workflows", "url": "https://openai.com/news", "source": "OpenAI Blog",
+         "description": "Updates to the Assistants API introduce parallel tool calling, improved structured output guarantees, and new lifecycle management endpoints."}
     ]
-    
     selected_news = news_items[:3] if len(news_items) >= 2 else default_news
-    for i, item in enumerate(selected_news):
+    biggest_news = []
+    for item in selected_news:
+        desc = (item.get("description") or "A significant AI development published today by researchers and industry leaders.")
         biggest_news.append({
             "headline": item["title"],
-            "summary": item["description"] or "A major AI announcement published recently by core creators and industry leaders.",
-            "why_it_matters": "Understanding how these core models are evaluated and controlled is pivotal for building secure, scalable user applications.",
-            "key_features": [
-                "Enhanced parameter observability and transparent telemetry.",
-                "Optimized model execution paths for developer pipelines.",
-                "Better structured JSON guarantees out of the box."
-            ],
-            "real_world_impact": "Reduces standard developer debugging times by up to 30% and establishes robust safety benchmarks for production integrations.",
-            "who_should_care": "AI engineers, systems architects, security researchers, and startup founders.",
-            "tldr": "Major laboratory releases improve safety mapping and developer SDK structures for the modern API ecosystem.",
+            "summary": desc[:300],
+            "why_it_matters": _why_news(item),
+            "key_features": _key_features(item),
+            "real_world_impact": _real_world_impact(item),
+            "who_should_care": _who_cares(item),
+            "tldr": _tldr(item),
             "link": item["url"]
         })
-        
+
     # 3. New Tools Discovered
-    discovered_tools = []
+    cats = ["AI Agents", "Developer Tools", "Coding Assistants", "Automation Tools", "Productivity AI", "Security Tools"]
     default_tools = [
-        {"title": "AgentOps", "description": "Observability and evaluation tools for AI Agents.", "url": "https://github.com"},
-        {"title": "Phidata", "description": "Build AI Assistants with memory, knowledge and tools.", "url": "https://github.com"}
+        {"title": "AgentOps", "description": "Observability and evaluation platform for AI agents with session replay and cost tracking.", "url": "https://github.com/AgentOps-AI/agentops", "category": "tool"},
+        {"title": "Phidata", "description": "Framework for building AI Assistants with persistent memory, knowledge bases, and tool use.", "url": "https://github.com/phidatahq/phidata", "category": "tool"}
     ]
     selected_tools = tool_items[:5] if len(tool_items) >= 2 else (repo_items[:3] + default_tools)
+    discovered_tools = []
     for i, item in enumerate(selected_tools[:6]):
-        cats = ["AI Agents", "Developer Tools", "Coding Assistants", "Automation Tools", "Productivity AI"]
+        desc = (item.get("description") or "")
         discovered_tools.append({
             "tool": item["title"].split("/")[-1],
             "category": cats[i % len(cats)],
-            "what_it_does": item["description"][:180] + "..." if len(item["description"]) > 180 else item["description"],
-            "why_it_matters": "Provides immediate out-of-the-box infrastructure, saving developers hundreds of hours writing custom orchestration layers.",
+            "what_it_does": (desc[:180] + "...") if len(desc) > 180 else desc,
+            "why_it_matters": _why_tool(item),
             "pricing": "Open Source / Free Tier available",
             "link": item["url"]
         })
-        
-    # 4. What Changed (Yesterday vs Today)
-    what_changed = []
-    # Generate some realistic updates based on news trends
-    what_changed.append({
-        "tool_or_company": "Gemini API Platform",
-        "yesterday": "Standard developer prompt windows and base vision model support.",
-        "today": "Expanded system instructions, native JSON schema support, and 2M token context windows.",
-        "why_it_matters": "Enables multi-hour audio/video understanding and massive document parsing without chunking."
-    })
-    what_changed.append({
-        "tool_or_company": "Open-Source LLMs (Llama, Mistral)",
-        "yesterday": "Large compute footprints requiring heavy GPU quantization.",
-        "today": "Ultra-efficient FP4/FP8 quantization, context extension, and mobile-native execution.",
-        "why_it_matters": "Makes private, local deployments of powerful reasoning models viable for mid-sized enterprises."
-    })
-    
+
+    # 4. What Changed
+    what_changed = [
+        {"tool_or_company": "Gemini API Platform",
+         "yesterday": "Standard prompt windows with base vision support.",
+         "today": "Expanded system instructions, native JSON schema enforcement, and 2M token context windows.",
+         "why_it_matters": "Enables multi-hour audio/video document parsing without chunking — unlocking new categories of enterprise automation."},
+        {"tool_or_company": "Open-Source LLMs (Llama, Mistral)",
+         "yesterday": "Large compute requirements and heavy GPU quantization overhead.",
+         "today": "Ultra-efficient FP4/FP8 quantization, context extension, and mobile-native execution paths.",
+         "why_it_matters": "Makes private, local deployments of powerful reasoning models viable for mid-sized enterprises without dedicated GPU clusters."}
+    ]
+
     # 5. Trending Workflows
     trending_workflows = [
-        {
-            "title": "Automated Code Review & PR Assistant",
-            "problem_solved": "Developers spending hours manually reviewing standard code styling, syntax, and unit-test configurations in pull requests.",
-            "tools_used": "GitHub Actions, Gemini API, Pytest/Jest, Git",
-            "steps": [
-                "PR trigger spawns a lightweight runner.",
-                "Scans files changed and feeds the diff to Gemini along with styled engineering standards.",
-                "Gemini returns structured suggestions and checks for potential edge-case errors.",
-                "Runner automatically formats recommendations as precise inline comments."
-            ],
-            "business_value": "Reduces standard QA cycles by 40%, increases code maintainability, and keeps senior engineers focused on architectural features.",
-            "difficulty": "Intermediate"
-        },
-        {
-            "title": "Local RAG Pipeline over PDF Manuals",
-            "problem_solved": "Employees wasting time scanning massive PDF document directories to answer client-facing technical queries.",
-            "tools_used": "LlamaIndex, SQLite, Streamlit, local Hugging Face Embeddings",
-            "steps": [
-                "Injest directory using a robust PDF parser.",
-                "Chunk and vector index documents locally using SentenceTransformers.",
-                "Query search triggers SQLite and vector similarity checks to retrieve exact text paragraphs.",
-                "Synthesize final user response in a custom local Streamlit interface."
-            ],
-            "business_value": "Prevents corporate data leakage to third-party endpoints and cuts employee support search time to seconds.",
-            "difficulty": "Beginner"
-        }
+        {"title": "Automated Code Review & PR Assistant",
+         "problem_solved": "Senior engineers spending hours on manual style and safety reviews in every pull request.",
+         "tools_used": "GitHub Actions, Gemini API, Pytest, Git",
+         "steps": [
+             "PR trigger spawns a lightweight CI runner.",
+             "Changed files are diffed and fed into Gemini alongside the team's engineering standards.",
+             "Gemini returns structured suggestions and flags potential edge-case regressions.",
+             "Runner posts precise inline comments and a summary directly on the PR."
+         ],
+         "business_value": "Reduces QA cycle time by up to 40% and keeps senior engineers focused on architecture rather than line-by-line review.",
+         "difficulty": "Intermediate"},
+        {"title": "Local RAG Pipeline over Internal Documents",
+         "problem_solved": "Teams wasting hours searching PDF archives and internal wikis for specific technical answers.",
+         "tools_used": "LlamaIndex, SQLite, Streamlit, local HuggingFace Embeddings",
+         "steps": [
+             "Ingest document directory using a robust PDF and Markdown parser.",
+             "Chunk and vector-index documents locally using SentenceTransformers.",
+             "Query triggers SQLite plus vector similarity retrieval to find the most relevant paragraphs.",
+             "Synthesise a final response in a local Streamlit interface with source citations."
+         ],
+         "business_value": "Eliminates data leakage to third-party endpoints and cuts internal search time from minutes to seconds.",
+         "difficulty": "Beginner"}
     ]
-    
+
     # 6. Open Source & Research
     open_source_research = []
-    selected_papers = paper_items[:3]
-    selected_repos = repo_items[:3]
-    
-    for item in selected_papers:
+    for item in paper_items[:3]:
         open_source_research.append({
             "title": item["title"],
             "category": "Research Paper",
-            "summary": item["description"],
-            "why_it_matters": "Introduces new optimization vectors that will likely become standard in the next generation of pre-trained open weights.",
+            "summary": (item.get("description") or "")[:300],
+            "why_it_matters": _why_research(item),
             "link": item["url"]
         })
-    for item in selected_repos:
+    for item in repo_items[:3]:
         open_source_research.append({
             "title": item["title"],
             "category": "Repository",
-            "summary": item["description"],
-            "why_it_matters": "A highly starred, fast-growing GitHub repository indicating massive organic developer interest and adoption.",
+            "summary": (item.get("description") or "")[:300],
+            "why_it_matters": _why_research(item),
             "link": item["url"]
         })
-        
     if not open_source_research:
         open_source_research = [
-            {
-                "title": "KAN: Kolmogorov-Arnold Networks",
-                "category": "Research Paper",
-                "summary": "An alternative to Multi-Layer Perceptrons (MLPs). KANs place learnable activation functions on edges rather than nodes, showing better accuracy and mathematical interpretability.",
-                "why_it_matters": "Could revolutionize how neural architectures are designed, offering high efficiency for scientific computing.",
-                "link": "https://arxiv.org/abs/2404.19756"
-            },
-            {
-                "title": "llama.cpp",
-                "category": "Repository",
-                "summary": "Port of Llama model in C/C++ for efficient local inference on consumer CPUs and Apple Silicon.",
-                "why_it_matters": "Core infrastructure powering the entire local open-source AI developer movement.",
-                "link": "https://github.com/ggerganov/llama.cpp"
-            }
+            {"title": "KAN: Kolmogorov-Arnold Networks", "category": "Research Paper",
+             "summary": "An alternative to MLPs where learnable activation functions sit on edges rather than nodes, improving accuracy and mathematical interpretability.",
+             "why_it_matters": "Could reshape neural architecture design, particularly for scientific computing tasks requiring interpretable models.",
+             "link": "https://arxiv.org/abs/2404.19756"},
+            {"title": "llama.cpp", "category": "Repository",
+             "summary": "C/C++ port of Llama and compatible models enabling efficient local inference on consumer CPUs and Apple Silicon without a GPU.",
+             "why_it_matters": "Core infrastructure powering the local open-source AI movement — essential for anyone building offline-first AI features.",
+             "link": "https://github.com/ggerganov/llama.cpp"}
         ]
-        
+
     # 7. Market Movements
     market_industry = [
-        {
-            "headline": "AI Infrastructure Startups Secure Record Round Sizes",
-            "summary": "Capital is shifting heavily from front-end wrapper applications into specialized AI hardware, cloud aggregators, and model security networks.",
-            "category": "Funding",
-            "link": "https://news.ycombinator.com"
-        },
-        {
-            "headline": "Enterprise SaaS Platforms Mandate Custom AI Integration",
-            "summary": "Over 78% of enterprise service platforms have added LLM-orchestrated assistance into their CRM and workflow dashboards, according to recent tech index reports.",
-            "category": "Enterprise",
-            "link": "https://producthunt.com"
-        }
+        {"headline": "AI Infrastructure Startups Attract Record Round Sizes in Latest Funding Cycle",
+         "summary": "Capital is concentrating in specialised AI hardware, cloud aggregation layers, and model security networks rather than consumer-facing wrappers.",
+         "category": "Funding", "link": "https://news.ycombinator.com"},
+        {"headline": "Enterprise SaaS Platforms Accelerate Native AI Integration Mandates",
+         "summary": "Over 70% of enterprise platforms surveyed have added LLM-orchestrated features to core CRM and workflow dashboards within the past 12 months.",
+         "category": "Enterprise", "link": "https://producthunt.com"}
     ]
-    
+
     # 8. Quick Takes
     quick_takes = [
-        {
-            "topic": "No-Code Agent Builders",
-            "opinion": "Extremely overhyped for production-grade software. While excellent for prototyping, complex corporate workflows require robust deterministic error handling that no-code UI nodes simply cannot deliver reliably.",
-            "hype_level": "Overhyped"
-        },
-        {
-            "topic": "Small, Locally Hosted Language Models (SLMs)",
-            "opinion": "Highly underrated. Models in the 3B-8B parameter range are becoming so efficient that they can execute structured tool-calling local tasks at 1/100th the latency and cost of proprietary giants.",
-            "hype_level": "Underrated"
-        }
+        {"topic": "No-Code Agent Builders",
+         "opinion": "Excellent for demos and rapid prototyping, but reliably deploying complex enterprise workflows through drag-and-drop nodes remains brittle. Production use still requires code-level control over error handling, retry logic, and state management.",
+         "hype_level": "Overhyped"},
+        {"topic": "Small, Locally Hosted Language Models (3B–8B)",
+         "opinion": "Dramatically underrated for structured, domain-specific tasks. Models in this range running on consumer hardware can match much larger cloud models on narrow workloads while offering full data privacy and near-zero marginal cost per request.",
+         "hype_level": "Underrated"}
     ]
-    
+
     # 9. What to Watch
     what_to_watch = [
-        {
-            "item": "Next-Gen Open-Source Models",
-            "details": "Major open weight developers are rumored to release multimodal models optimized for mobile environments."
-        },
-        {
-            "item": "Stateful Agent Benchmarks",
-            "details": "New benchmarks evaluating AI agent endurance and planning consistency over hundreds of steps are expected to drop soon."
-        }
+        {"item": "Next-Generation Open-Source Multimodal Models",
+         "details": "Several major open-weight developers are expected to release models with strong vision-language capabilities competitive with proprietary offerings."},
+        {"item": "Stateful Long-Horizon Agent Benchmarks",
+         "details": "New evaluation frameworks designed to test agent performance over hundreds of sequential steps — rather than single-turn completions — are expected from leading AI safety labs."}
     ]
-    
-    digest_json = {
+
+    return {
         "date": date_str,
-        "editorial_trend": {
-            "title": title,
-            "paragraphs": [p1, p2]
-        },
+        "editorial_trend": {"title": trend_title, "paragraphs": [trend_p1, trend_p2]},
         "biggest_news": biggest_news,
         "discovered_tools": discovered_tools,
         "what_changed": what_changed,
@@ -229,8 +362,6 @@ def run_offline_fallback(date_str, raw_items):
         "quick_takes": quick_takes,
         "what_to_watch": what_to_watch
     }
-    
-    return digest_json
 
 def generate_digest(db_path, date_str, api_key=None):
     """Aggregates daily items, compares them with history, synthesizes via Gemini or Fallback, and saves the output."""
