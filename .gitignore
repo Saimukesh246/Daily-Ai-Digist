@@ -28,3 +28,10 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Virtual environments
+venv/
+.venv/
+
+# Local scripts
+fix_fetch.py

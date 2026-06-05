@@ -59,11 +59,63 @@ def init_db(db_path=DEFAULT_DB_PATH):
     )
     """)
 
+    # Table for dynamic news sources
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL UNIQUE,
+        source_type TEXT NOT NULL DEFAULT 'rss',
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    # --- AUTH TABLES ---
+
+    # Table for registered users
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT DEFAULT '',
+        password_hash TEXT DEFAULT '',
+        google_id TEXT DEFAULT '',
+        avatar_url TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        last_login TEXT
+    )
+    """)
+
+    # Table for active login sessions (JWT tokens)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sessions (
+        token TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """)
+
+    # Seed default sources on first startup
+    cursor.execute("SELECT COUNT(*) FROM sources")
+    if cursor.fetchone()[0] == 0:
+        now_str = datetime.utcnow().isoformat()
+        cursor.executemany("""
+        INSERT INTO sources (name, url, source_type, enabled, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """, [
+            ("OpenAI Blog", "https://openai.com/news/rss/", "rss", 1, now_str),
+            ("Google DeepMind Blog", "https://deepmind.google/blog/rss.xml", "rss", 1, now_str),
+            ("Anthropic Blog", "https://www.anthropic.com/news", "scrape", 1, now_str)
+        ])
+
     conn.commit()
     conn.close()
 
 def save_raw_article(db_path, date, source, title, description, url, category):
-    """Saves a raw crawled article. Ignores duplicates based on URL."""
+    """Saves a raw crawled article. If URL already exists, updates the article details."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
     fetched_at = datetime.utcnow().isoformat()
@@ -75,7 +127,12 @@ def save_raw_article(db_path, date, source, title, description, url, category):
         conn.commit()
         success = True
     except sqlite3.IntegrityError:
-        # Article with this URL already exists
+        cursor.execute("""
+        UPDATE raw_articles
+        SET date = ?, source = ?, title = ?, description = ?, category = ?, fetched_at = ?
+        WHERE url = ?
+        """, (date, source, title, description, category, fetched_at, url))
+        conn.commit()
         success = False
     finally:
         conn.close()
@@ -94,19 +151,16 @@ def get_raw_articles_by_date(db_path, date):
     return articles
 
 def get_raw_articles_since(db_path, base_date_str, days=7):
-    """Retrieves all raw articles within a range prior to a base date (for comparisons)."""
+    """Retrieves all raw articles within a range prior to a base date."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
-    
     base_date = datetime.strptime(base_date_str, "%Y-%m-%d")
     start_date = (base_date - timedelta(days=days)).strftime("%Y-%m-%d")
-    
     cursor.execute("""
-    SELECT * FROM raw_articles 
-    WHERE date >= ? AND date < ? 
+    SELECT * FROM raw_articles
+    WHERE date >= ? AND date < ?
     ORDER BY date DESC, id DESC
     """, (start_date, base_date_str))
-    
     rows = cursor.fetchall()
     articles = [dict(row) for row in rows]
     conn.close()
@@ -118,12 +172,10 @@ def save_digest(db_path, date, content_dict):
     cursor = conn.cursor()
     content_json = json.dumps(content_dict, ensure_ascii=False)
     created_at = datetime.utcnow().isoformat()
-    
     cursor.execute("""
     INSERT OR REPLACE INTO digests (date, content, created_at)
     VALUES (?, ?, ?)
     """, (date, content_json, created_at))
-    
     conn.commit()
     conn.close()
 
@@ -136,7 +188,6 @@ def get_digest(db_path, date):
     """, (date,))
     row = cursor.fetchone()
     conn.close()
-    
     if row:
         row_dict = dict(row)
         row_dict["content"] = json.loads(row_dict["content"])
@@ -152,7 +203,6 @@ def get_latest_digest(db_path):
     """)
     row = cursor.fetchone()
     conn.close()
-    
     if row:
         row_dict = dict(row)
         row_dict["content"] = json.loads(row_dict["content"])
@@ -291,12 +341,14 @@ def get_active_subscribers(db_path):
 
 DEFAULT_SCRAPER_CONFIG = {
     "hacker_news":  {"enabled": True,  "limit": 20},
-    "reddit":       {"enabled": True,  "subreddits": ["MachineLearning", "singularity", "ArtificialInteligence"], "limit": 10},
+    # Fixed typo: "ArtificialInteligence" → "ArtificialIntelligence"
+    "reddit":       {"enabled": True,  "subreddits": ["MachineLearning", "singularity", "ArtificialIntelligence"], "limit": 10},
     "huggingface":  {"enabled": True,  "limit": 15},
     "arxiv":        {"enabled": True,  "limit": 15},
     "github":       {"enabled": True,  "keywords": ["ai", "llm", "agent", "machine-learning", "neural"], "limit": 15},
     "product_hunt": {"enabled": True},
     "lab_blogs":    {"enabled": True},
+    "custom_rss":   [],
 }
 
 
@@ -306,10 +358,16 @@ def get_scraper_config(db_path):
     if raw:
         try:
             stored = json.loads(raw)
-            config = {k: dict(v) for k, v in DEFAULT_SCRAPER_CONFIG.items()}
+            import copy
+            config = copy.deepcopy(DEFAULT_SCRAPER_CONFIG)
             for key, val in stored.items():
                 if key in config:
-                    config[key].update(val)
+                    if isinstance(config[key], dict) and isinstance(val, dict):
+                        config[key].update(val)
+                    else:
+                        config[key] = val
+                else:
+                    config[key] = val
             return config
         except Exception:
             pass
@@ -320,3 +378,231 @@ def get_scraper_config(db_path):
 def save_scraper_config(db_path, config):
     """Saves the scraper configuration dict to the settings table as JSON."""
     save_setting(db_path, "scraper_config", json.dumps(config))
+
+
+# --- Dynamic Sources Management ---
+
+def add_source(db_path, name, url, source_type="rss", enabled=1):
+    """Adds a new dynamic news/blog source. Returns True if successful, False if URL duplicate."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    created_at = datetime.utcnow().isoformat()
+    try:
+        cursor.execute("""
+        INSERT INTO sources (name, url, source_type, enabled, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """, (name.strip(), url.strip(), source_type, enabled, created_at))
+        conn.commit()
+        success = True
+    except sqlite3.IntegrityError:
+        success = False
+    finally:
+        conn.close()
+    return success
+
+
+def get_sources(db_path):
+    """Retrieves all dynamic news/blog sources."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM sources ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_source(db_path, source_id):
+    """Retrieves a specific news/blog source by ID."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM sources WHERE id = ?", (source_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_source(db_path, source_id, name, url, source_type, enabled):
+    """Updates a dynamic news/blog source details."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        UPDATE sources
+        SET name = ?, url = ?, source_type = ?, enabled = ?
+        WHERE id = ?
+        """, (name.strip(), url.strip(), source_type, int(enabled), source_id))
+        conn.commit()
+        success = cursor.rowcount > 0
+    except sqlite3.IntegrityError:
+        success = False
+    finally:
+        conn.close()
+    return success
+
+
+def delete_source(db_path, source_id):
+    """Deletes a dynamic news/blog source."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return success
+
+
+def toggle_source(db_path, source_id):
+    """Toggles the enabled status of a news/blog source. Returns (success, new_state)."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT enabled FROM sources WHERE id = ?", (source_id,))
+    row = cursor.fetchone()
+    if row:
+        new_state = 0 if row["enabled"] else 1
+        cursor.execute("UPDATE sources SET enabled = ? WHERE id = ?", (new_state, source_id))
+        conn.commit()
+        success = True
+    else:
+        success = False
+        new_state = None
+    conn.close()
+    return success, new_state
+
+
+# =============================================================================
+# AUTH — Users & Sessions
+# =============================================================================
+
+def create_user(db_path, email, name="", password_hash="", google_id="", avatar_url=""):
+    """Creates a new user. Returns user dict on success, None if email already exists."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    created_at = datetime.utcnow().isoformat()
+    try:
+        cursor.execute("""
+        INSERT INTO users (email, name, password_hash, google_id, avatar_url, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, (email.strip().lower(), name.strip(), password_hash, google_id, avatar_url, created_at))
+        conn.commit()
+        user_id = cursor.lastrowid
+        conn.close()
+        return get_user_by_id(db_path, user_id)
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+
+def get_user_by_email(db_path, email):
+    """Retrieves a user by email address."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE email = ?", (email.strip().lower(),))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_by_id(db_path, user_id):
+    """Retrieves a user by ID."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_by_google_id(db_path, google_id):
+    """Retrieves a user by their Google account ID."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE google_id = ?", (google_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_user_last_login(db_path, user_id):
+    """Stamps the user's last_login timestamp to now."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET last_login = ? WHERE id = ?",
+                   (datetime.utcnow().isoformat(), user_id))
+    conn.commit()
+    conn.close()
+
+
+def update_user_google_info(db_path, user_id, google_id, avatar_url, name):
+    """Updates Google OAuth info for an existing user."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+    UPDATE users SET google_id = ?, avatar_url = ?, name = ?
+    WHERE id = ?
+    """, (google_id, avatar_url, name, user_id))
+    conn.commit()
+    conn.close()
+
+
+def get_user_count(db_path):
+    """Returns total number of registered users."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as cnt FROM users")
+    row = cursor.fetchone()
+    conn.close()
+    return row["cnt"] if row else 0
+
+
+def save_session(db_path, token, user_id, expires_hours=720):
+    """Stores a new session token. Default expiry: 30 days (720 hours)."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    created_at = datetime.utcnow().isoformat()
+    expires_at = (datetime.utcnow() + timedelta(hours=expires_hours)).isoformat()
+    cursor.execute("""
+    INSERT OR REPLACE INTO sessions (token, user_id, created_at, expires_at)
+    VALUES (?, ?, ?, ?)
+    """, (token, user_id, created_at, expires_at))
+    conn.commit()
+    conn.close()
+
+
+def get_session(db_path, token):
+    """Retrieves a session by token. Returns None if expired or not found."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM sessions WHERE token = ?", (token,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    session = dict(row)
+    # Check expiry
+    try:
+        expires_at = datetime.fromisoformat(session["expires_at"])
+        if datetime.utcnow() > expires_at:
+            delete_session(db_path, token)
+            return None
+    except Exception:
+        pass
+    return session
+
+
+def delete_session(db_path, token):
+    """Removes a specific session (logout)."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    conn.commit()
+    conn.close()
+
+
+def delete_expired_sessions(db_path):
+    """Cleans up all expired sessions."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    now = datetime.utcnow().isoformat()
+    cursor.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
+    conn.commit()
+    conn.close()

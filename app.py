@@ -2,14 +2,33 @@ import os
 import time
 import logging
 import threading
-from datetime import datetime
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+import secrets
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Response, Depends, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from typing import Optional
 
 import requests as _requests
 from bs4 import BeautifulSoup as _BeautifulSoup
+
+# Load .env file if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+# Auth libraries
+try:
+    import bcrypt as _bcrypt
+    BCRYPT_AVAILABLE = True
+except ImportError:
+    BCRYPT_AVAILABLE = False
+    _bcrypt = None
 
 import database
 import fetcher
@@ -19,11 +38,19 @@ import emailer
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
 
+# ---------------------------------------------------------------------------
+# Lifespan (replaces deprecated @app.on_event)
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app_instance: "FastAPI"):
+    start_hourly_scheduler()
+    yield
+
 # Initialize FastAPI application
-app = FastAPI(title="Daily AI Digest Server", version="1.0.0")
+app = FastAPI(title="Daily AI Digest Server", version="1.0.0", lifespan=lifespan)
 
 # Setup folder directories
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "css"), exist_ok=True)
@@ -36,17 +63,82 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 DB_PATH = database.DEFAULT_DB_PATH
 database.init_db(DB_PATH)
 
-# In-memory OG image cache — avoids re-scraping the same URL within a session
+# In-memory OG image cache
 _og_cache: dict = {}
 
 # Global synchronization progress state
 SYNC_STATUS = {
-    "status": "idle",  # "idle", "fetching", "analyzing", "complete", "error"
+    "status": "idle",
     "current_step": "System ready",
     "logs": ["Server initialized."],
     "error_message": "",
     "completed_at": None
 }
+
+# Google OAuth Client ID (set via env var or Settings panel in future)
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+
+# ---------------------------------------------------------------------------
+# Security / Auth helpers
+# ---------------------------------------------------------------------------
+
+security = HTTPBearer(auto_error=False)
+
+
+def hash_password(password: str) -> str:
+    if BCRYPT_AVAILABLE and _bcrypt:
+        hashed = _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt())
+        return hashed.decode("utf-8")
+    import hashlib
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    if BCRYPT_AVAILABLE and _bcrypt:
+        try:
+            return _bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+        except Exception:
+            return False
+    import hashlib
+    return hashlib.sha256(plain.encode()).hexdigest() == hashed
+
+
+def generate_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def get_smtp_settings() -> dict:
+    return {
+        "host":      database.get_setting(DB_PATH, "smtp_host", ""),
+        "port":      int(database.get_setting(DB_PATH, "smtp_port", "587")),
+        "user":      database.get_setting(DB_PATH, "smtp_user", ""),
+        "password":  database.get_setting(DB_PATH, "smtp_password", ""),
+        "from_name": database.get_setting(DB_PATH, "smtp_from_name", "Daily AI Digest"),
+    }
+
+
+def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    """Returns the current user dict or None if unauthenticated."""
+    if not credentials:
+        return None
+    token   = credentials.credentials
+    session = database.get_session(DB_PATH, token)
+    if not session:
+        return None
+    user = database.get_user_by_id(DB_PATH, session["user_id"])
+    return user
+
+
+def require_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    """Dependency: raises 401 if the request has no valid auth token."""
+    user = get_current_user_optional(credentials)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
+    return user
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
 
 class SettingsPayload(BaseModel):
     gemini_api_key: str
@@ -70,50 +162,71 @@ class TestEmailPayload(BaseModel):
 class ScraperSettingsPayload(BaseModel):
     config: dict
 
+class SourcePayload(BaseModel):
+    name: str
+    url: str
+    source_type: str = "rss"
+    enabled: bool = True
+
+# Auth payloads
+class RegisterPayload(BaseModel):
+    email: str
+    password: str
+    name: str = ""
+
+class LoginPayload(BaseModel):
+    email: str
+    password: str
+
+class GoogleAuthPayload(BaseModel):
+    credential: str   # Google ID token (JWT from Sign-In button)
+
+# ---------------------------------------------------------------------------
+# Logging helper
+# ---------------------------------------------------------------------------
+
 def add_log(message):
-    """Utility to log messages both to the console and to the global status feed."""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    log_line = f"[{timestamp}] {message}"
+    log_line  = f"[{timestamp}] {message}"
     logger.info(message)
     SYNC_STATUS["logs"].append(log_line)
     SYNC_STATUS["current_step"] = message
 
+# ---------------------------------------------------------------------------
+# Background sync job
+# ---------------------------------------------------------------------------
+
 def run_sync_job(date_str):
-    """Executes the complete fetch-and-analyze loop in a background thread."""
     global SYNC_STATUS
     try:
-        SYNC_STATUS["status"] = "fetching"
+        SYNC_STATUS["status"]        = "fetching"
         SYNC_STATUS["error_message"] = ""
-        SYNC_STATUS["completed_at"] = None
-        SYNC_STATUS["logs"] = []
-        
+        SYNC_STATUS["completed_at"]  = None
+        SYNC_STATUS["logs"]          = []
+
         add_log("Starting Daily AI Digest gathering job...")
 
-        # Load scraper config from DB (falls back to defaults if not set)
         cfg = database.get_scraper_config(DB_PATH)
-
-        # 1. Fetching raw resources
-        add_log("Connecting to data sources...")
-        all_items = []
 
         hn_cfg = cfg.get("hacker_news", {})
         if hn_cfg.get("enabled", True):
             add_log("Crawling Hacker News AI stories (last 36 hours)...")
             hn_items = fetcher.fetch_hacker_news_ai(date_str, limit=hn_cfg.get("limit", 20))
             add_log(f"-> Hacker News: Found {len(hn_items)} articles.")
-            all_items.extend(hn_items)
+            all_items = hn_items
         else:
-            add_log("-> Hacker News: Skipped (disabled in Sources settings).")
+            add_log("-> Hacker News: Skipped (disabled).")
+            all_items = []
 
         rd_cfg = cfg.get("reddit", {})
         if rd_cfg.get("enabled", True):
-            subs = rd_cfg.get("subreddits", ["MachineLearning", "singularity", "ArtificialInteligence"])
+            subs = rd_cfg.get("subreddits", ["MachineLearning", "singularity", "ArtificialIntelligence"])
             add_log(f"Crawling Reddit AI subreddits ({', '.join(f'r/{s}' for s in subs)})...")
             reddit_items = fetcher.fetch_reddit_ai(subreddits=subs, limit=rd_cfg.get("limit", 10))
             add_log(f"-> Reddit: Found {len(reddit_items)} posts.")
             all_items.extend(reddit_items)
         else:
-            add_log("-> Reddit: Skipped (disabled in Sources settings).")
+            add_log("-> Reddit: Skipped (disabled).")
 
         hf_cfg = cfg.get("huggingface", {})
         if hf_cfg.get("enabled", True):
@@ -122,7 +235,7 @@ def run_sync_job(date_str):
             add_log(f"-> Hugging Face: Found {len(hf_items)} papers.")
             all_items.extend(hf_items)
         else:
-            add_log("-> Hugging Face: Skipped (disabled in Sources settings).")
+            add_log("-> Hugging Face: Skipped (disabled).")
 
         ax_cfg = cfg.get("arxiv", {})
         if ax_cfg.get("enabled", True):
@@ -131,7 +244,7 @@ def run_sync_job(date_str):
             add_log(f"-> Arxiv: Found {len(arxiv_items)} preprints.")
             all_items.extend(arxiv_items)
         else:
-            add_log("-> Arxiv: Skipped (disabled in Sources settings).")
+            add_log("-> Arxiv: Skipped (disabled).")
 
         gh_cfg = cfg.get("github", {})
         if gh_cfg.get("enabled", True):
@@ -143,7 +256,7 @@ def run_sync_job(date_str):
             add_log(f"-> GitHub Trending: Found {len(github_items)} repositories.")
             all_items.extend(github_items)
         else:
-            add_log("-> GitHub Trending: Skipped (disabled in Sources settings).")
+            add_log("-> GitHub Trending: Skipped (disabled).")
 
         ph_cfg = cfg.get("product_hunt", {})
         if ph_cfg.get("enabled", True):
@@ -152,28 +265,28 @@ def run_sync_job(date_str):
             add_log(f"-> Product Hunt: Found {len(ph_items)} launches.")
             all_items.extend(ph_items)
         else:
-            add_log("-> Product Hunt: Skipped (disabled in Sources settings).")
+            add_log("-> Product Hunt: Skipped (disabled).")
 
         lb_cfg = cfg.get("lab_blogs", {})
         if lb_cfg.get("enabled", True):
-            add_log("Crawling AI Lab blogs (OpenAI, DeepMind, Anthropic news)...")
+            add_log("Crawling AI Lab blogs (OpenAI, DeepMind, Anthropic)...")
             lab_items = fetcher.fetch_lab_blogs()
             add_log(f"-> Lab Blogs: Found {len(lab_items)} articles.")
             all_items.extend(lab_items)
         else:
-            add_log("-> Lab Blogs: Skipped (disabled in Sources settings).")
+            add_log("-> Lab Blogs: Skipped (disabled).")
+
         unique_items = []
-        seen_urls = set()
+        seen_urls    = set()
         for item in all_items:
             url = item.get("url")
             if url and url not in seen_urls:
                 seen_urls.add(url)
                 unique_items.append(item)
-                
+
         add_log(f"Deduplication completed. Total unique entries: {len(unique_items)}")
-        
-        # Save raw articles to DB
         add_log("Saving raw articles to local SQLite database...")
+
         saved_count = 0
         for item in unique_items:
             saved = database.save_raw_article(
@@ -182,44 +295,42 @@ def run_sync_job(date_str):
             )
             if saved:
                 saved_count += 1
-        add_log(f"-> Saved {saved_count} new entries. (Others were skipped as duplicates)")
-        
-        # 2. News synthesis
+        add_log(f"-> Saved {saved_count} new entries.")
+
         SYNC_STATUS["status"] = "analyzing"
-        add_log("Entering Synthesis stage. Preparing context package...")
-        
-        # Retrieve settings or fallback environment variables
+        add_log("Entering Synthesis stage...")
+
         api_key = database.get_setting(DB_PATH, "gemini_api_key") or os.environ.get("GEMINI_API_KEY")
         if api_key:
-            add_log("Gemini API key detected. Initiating AI synthesis model (gemini-1.5-flash)...")
+            add_log("Gemini API key detected. Initiating synthesis model...")
         else:
-            add_log("No Gemini API key configured. Activating local intelligent offline fallback engine...")
-            
+            add_log("No Gemini API key — activating offline fallback engine...")
+
         digest, mode = analyzer.generate_digest(DB_PATH, date_str, api_key)
-        
+
         if "fallback" in mode:
-            add_log("Intelligent offline synthesis complete (using heuristic template compilation).")
+            add_log("Intelligent offline synthesis complete.")
         else:
-            add_log("Gemini synthesis completed successfully! Structured JSON generated and verified.")
-            
-        SYNC_STATUS["status"] = "complete"
+            add_log("Gemini synthesis completed successfully!")
+
+        SYNC_STATUS["status"]       = "complete"
         SYNC_STATUS["completed_at"] = datetime.now().isoformat()
         add_log(f"Successfully compiled Daily AI Digest for {date_str}!")
-        
+
     except Exception as e:
         logger.exception("Synchronization job failed:")
-        SYNC_STATUS["status"] = "error"
+        SYNC_STATUS["status"]        = "error"
         SYNC_STATUS["error_message"] = str(e)
         add_log(f"CRITICAL ERROR: {e}")
 
-# --- WEB ENDPOINTS ---
+# ---------------------------------------------------------------------------
+# WEB ENDPOINTS
+# ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
-    """Serves the dashboard index file directly."""
     index_path = os.path.join(STATIC_DIR, "index.html")
     if not os.path.exists(index_path):
-        # Serve a helpful fallback loading message if frontend files aren't created yet
         return """
         <html>
             <head><title>Daily AI Digest</title><style>body {background:#0f172a; color:#f8fafc; font-family:sans-serif; text-align:center; padding:100px;}</style></head>
@@ -229,93 +340,283 @@ async def serve_dashboard():
     with open(index_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
+# ---------------------------------------------------------------------------
+# AUTH ENDPOINTS
+# ---------------------------------------------------------------------------
+
+@app.post("/api/auth/register")
+async def register(payload: RegisterPayload, request: Request):
+    """Register a new user with email + password."""
+    import re
+    email = payload.email.strip().lower()
+    if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status_code=400, detail="Invalid email address.")
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+
+    existing = database.get_user_by_email(DB_PATH, email)
+    if existing:
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+
+    name          = payload.name.strip() or email.split("@")[0]
+    password_hash = hash_password(payload.password)
+    user          = database.create_user(DB_PATH, email, name=name, password_hash=password_hash)
+
+    if not user:
+        raise HTTPException(status_code=500, detail="Failed to create account.")
+
+    token = generate_token()
+    database.save_session(DB_PATH, token, user["id"])
+    database.update_user_last_login(DB_PATH, user["id"])
+
+    # Send login confirmation email in background
+    smtp = get_smtp_settings()
+    threading.Thread(
+        target=emailer.send_login_confirmation_email,
+        args=(smtp, email, name, datetime.utcnow(), "Email Registration"),
+        daemon=True
+    ).start()
+
+    return {
+        "token": token,
+        "user":  {"id": user["id"], "email": user["email"], "name": user["name"], "avatar_url": user.get("avatar_url", "")},
+        "message": "Account created successfully."
+    }
+
+
+@app.post("/api/auth/login")
+async def login(payload: LoginPayload, request: Request):
+    """Login with email + password."""
+    email = payload.email.strip().lower()
+    user  = database.get_user_by_email(DB_PATH, email)
+
+    if not user or not user.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    token = generate_token()
+    database.save_session(DB_PATH, token, user["id"])
+    database.update_user_last_login(DB_PATH, user["id"])
+
+    # Send login confirmation email in background
+    smtp = get_smtp_settings()
+    threading.Thread(
+        target=emailer.send_login_confirmation_email,
+        args=(smtp, email, user.get("name", ""), datetime.utcnow(), "Email & Password"),
+        daemon=True
+    ).start()
+
+    return {
+        "token": token,
+        "user":  {"id": user["id"], "email": user["email"], "name": user["name"], "avatar_url": user.get("avatar_url", "")},
+        "message": "Login successful."
+    }
+
+
+@app.post("/api/auth/google")
+async def google_auth(payload: GoogleAuthPayload, request: Request):
+    """
+    Verify a Google ID token (from Google One Tap / Sign-In button) and
+    return a session token. Creates the user if first time.
+    """
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=503,
+            detail="Google OAuth is not configured on this server. Please use email/password login or set GOOGLE_CLIENT_ID."
+        )
+
+    try:
+        import httpx
+        # Verify the Google ID token with Google's tokeninfo endpoint
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": payload.credential}
+            )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid Google token.")
+
+        token_info = resp.json()
+
+        # Validate audience
+        if token_info.get("aud") != GOOGLE_CLIENT_ID:
+            raise HTTPException(status_code=401, detail="Token audience mismatch.")
+
+        google_id  = token_info.get("sub", "")
+        email      = token_info.get("email", "").lower()
+        name       = token_info.get("name", email.split("@")[0])
+        avatar_url = token_info.get("picture", "")
+
+        if not email:
+            raise HTTPException(status_code=400, detail="Google account has no email.")
+
+        # Find user by Google ID or email
+        user = database.get_user_by_google_id(DB_PATH, google_id)
+        if not user:
+            user = database.get_user_by_email(DB_PATH, email)
+
+        if user:
+            # Update Google info if changed
+            database.update_user_google_info(DB_PATH, user["id"], google_id, avatar_url, name)
+            user = database.get_user_by_id(DB_PATH, user["id"])
+        else:
+            # First-time Google sign-in — create account
+            user = database.create_user(
+                DB_PATH, email, name=name,
+                google_id=google_id, avatar_url=avatar_url
+            )
+            if not user:
+                raise HTTPException(status_code=500, detail="Failed to create account.")
+
+        session_token = generate_token()
+        database.save_session(DB_PATH, session_token, user["id"])
+        database.update_user_last_login(DB_PATH, user["id"])
+
+        # Send login confirmation email in background
+        smtp = get_smtp_settings()
+        threading.Thread(
+            target=emailer.send_login_confirmation_email,
+            args=(smtp, email, name, datetime.utcnow(), "Google Sign-In"),
+            daemon=True
+        ).start()
+
+        return {
+            "token": session_token,
+            "user":  {"id": user["id"], "email": user["email"], "name": user["name"], "avatar_url": user.get("avatar_url", "")},
+            "message": "Google login successful."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Google auth error:")
+        raise HTTPException(status_code=500, detail=f"Google authentication failed: {exc}")
+
+
+@app.get("/api/auth/me")
+async def get_me(current_user: dict = Depends(require_auth)):
+    """Returns info about the currently authenticated user."""
+    return {
+        "id":        current_user["id"],
+        "email":     current_user["email"],
+        "name":      current_user["name"],
+        "avatar_url": current_user.get("avatar_url", ""),
+        "created_at": current_user.get("created_at", ""),
+        "last_login": current_user.get("last_login", ""),
+    }
+
+
+@app.post("/api/auth/logout")
+async def logout(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    """Invalidates the current session token."""
+    if credentials:
+        database.delete_session(DB_PATH, credentials.credentials)
+    return {"message": "Logged out successfully."}
+
+
+@app.get("/api/auth/google-client-id")
+async def get_google_client_id():
+    """Returns the Google Client ID (safe to expose to frontend) so the Sign-In button can be configured."""
+    return {"client_id": GOOGLE_CLIENT_ID, "configured": bool(GOOGLE_CLIENT_ID)}
+
+# ---------------------------------------------------------------------------
+# DATA API ENDPOINTS (protected by auth)
+# ---------------------------------------------------------------------------
+
 @app.get("/api/search")
-async def search_articles(q: str = "", source: str = "", limit: int = 40):
-    """Searches raw articles by title/description. Returns results + all distinct sources."""
+async def search_articles(q: str = "", source: str = "", limit: int = 40,
+                           _user: dict = Depends(require_auth)):
     results = database.search_articles(DB_PATH, q.strip(), source.strip() or None, limit)
     sources = database.get_distinct_sources(DB_PATH)
     return {"results": results, "sources": sources, "total": len(results)}
 
+
 @app.get("/api/og-image")
-async def get_og_image(url: str):
-    """Fetches and returns the OG/Twitter card image URL for a given article URL."""
+async def get_og_image(url: str, _user: dict = Depends(require_auth)):
     if url in _og_cache:
         return _og_cache[url]
-    result = {"image_url": ""}
+    result = {"image_url": "", "title": ""}
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; AiDigestBot/1.0; +http://localhost)"}
-        resp = _requests.get(url, headers=headers, timeout=6, allow_redirects=True)
-        soup = _BeautifulSoup(resp.text, "html.parser")
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; AiDigestBot/1.0)"}
+        resp    = _requests.get(url, headers=headers, timeout=6, allow_redirects=True)
+        soup    = _BeautifulSoup(resp.text, "html.parser")
         for attr, val in [("property", "og:image"), ("name", "twitter:image"), ("property", "twitter:image")]:
             tag = soup.find("meta", {attr: val})
             if tag and tag.get("content"):
-                result = {"image_url": tag["content"]}
+                result["image_url"] = tag["content"]
                 break
+        for attr, val in [("property", "og:title"), ("name", "twitter:title"), ("property", "twitter:title")]:
+            tag = soup.find("meta", {attr: val})
+            if tag and tag.get("content"):
+                result["title"] = tag["content"].strip()
+                break
+        if not result["title"] and soup.title:
+            result["title"] = soup.title.string.strip()
     except Exception:
         pass
     _og_cache[url] = result
     return result
 
+
 @app.get("/api/digests")
-async def list_digests():
-    """Returns a list of all dates that have compiled digests."""
+async def list_digests(_user: dict = Depends(require_auth)):
     dates = database.get_all_digest_dates(DB_PATH)
     return {"dates": dates}
 
+
 @app.get("/api/digests/latest")
-async def get_latest_digest():
-    """Retrieves the newest digest available."""
+async def get_latest_digest(_user: dict = Depends(require_auth)):
     digest = database.get_latest_digest(DB_PATH)
     if not digest:
         raise HTTPException(status_code=404, detail="No digests generated yet.")
     return digest
 
+
 @app.get("/api/digests/{date}")
-async def get_digest_by_date(date: str):
-    """Retrieves a digest by specific date (format YYYY-MM-DD)."""
+async def get_digest_by_date(date: str, _user: dict = Depends(require_auth)):
     digest = database.get_digest(DB_PATH, date)
     if not digest:
         raise HTTPException(status_code=404, detail=f"Digest for date {date} not found.")
     return digest
 
+
 @app.post("/api/trigger")
-async def trigger_sync(background_tasks: BackgroundTasks, date: str = None):
-    """Triggers an asynchronous fetch and compile run."""
+async def trigger_sync(background_tasks: BackgroundTasks, date: str = None,
+                        _user: dict = Depends(require_auth)):
     global SYNC_STATUS
     if SYNC_STATUS["status"] in ["fetching", "analyzing"]:
-        return JSONResponse(status_code=400, content={"detail": "A synchronization run is already actively running."})
-        
+        return JSONResponse(status_code=400, content={"detail": "A synchronization run is already active."})
     target_date = date or datetime.now().strftime("%Y-%m-%d")
     background_tasks.add_task(run_sync_job, target_date)
-    return {"message": "Aggregation background task triggered successfully.", "date": target_date}
+    return {"message": "Aggregation task triggered.", "date": target_date}
+
 
 @app.get("/api/status")
-async def get_status():
-    """Returns the current running status and full log lines of the crawler engine."""
+async def get_status(_user: dict = Depends(require_auth)):
     return SYNC_STATUS
 
+
 @app.get("/api/settings")
-async def get_settings():
-    """Retrieves system configurations (masking the API key for security)."""
+async def get_settings(_user: dict = Depends(require_auth)):
     key = database.get_setting(DB_PATH, "gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
     masked_key = ""
     if key:
         masked_key = f"sk-...{key[-4:]}" if len(key) > 4 else "sk-configured"
     return {"has_key": bool(key), "masked_key": masked_key}
 
+
 @app.post("/api/settings")
-async def update_settings(payload: SettingsPayload):
-    """Saves a new Gemini API Key to SQLite settings."""
+async def update_settings(payload: SettingsPayload, _user: dict = Depends(require_auth)):
     if not payload.gemini_api_key.strip():
         raise HTTPException(status_code=400, detail="API Key cannot be empty.")
     database.save_setting(DB_PATH, "gemini_api_key", payload.gemini_api_key.strip())
     return {"message": "Settings updated successfully."}
 
-# --- Email settings endpoints ---
 
 @app.get("/api/settings/email")
-async def get_email_settings():
-    """Returns current SMTP configuration (password is never returned)."""
+async def get_email_settings(_user: dict = Depends(require_auth)):
     return {
         "smtp_host":    database.get_setting(DB_PATH, "smtp_host", ""),
         "smtp_port":    int(database.get_setting(DB_PATH, "smtp_port", "587")),
@@ -325,44 +626,140 @@ async def get_email_settings():
         "has_password": bool(database.get_setting(DB_PATH, "smtp_password", "")),
     }
 
+
 @app.post("/api/settings/email")
-async def update_email_settings(payload: EmailSettingsPayload):
-    """Saves SMTP configuration. Skips overwriting password if the field is blank."""
-    database.save_setting(DB_PATH, "smtp_host",     payload.smtp_host.strip())
-    database.save_setting(DB_PATH, "smtp_port",     str(payload.smtp_port))
-    database.save_setting(DB_PATH, "smtp_user",     payload.smtp_user.strip())
+async def update_email_settings(payload: EmailSettingsPayload, _user: dict = Depends(require_auth)):
+    database.save_setting(DB_PATH, "smtp_host",      payload.smtp_host.strip())
+    database.save_setting(DB_PATH, "smtp_port",      str(payload.smtp_port))
+    database.save_setting(DB_PATH, "smtp_user",      payload.smtp_user.strip())
     database.save_setting(DB_PATH, "smtp_from_name", payload.from_name.strip())
-    database.save_setting(DB_PATH, "email_enabled", str(payload.enabled).lower())
+    database.save_setting(DB_PATH, "email_enabled",  str(payload.enabled).lower())
     if payload.smtp_password.strip():
         database.save_setting(DB_PATH, "smtp_password", payload.smtp_password.strip())
     return {"message": "Email settings saved successfully."}
 
-# --- Scraper settings endpoints ---
 
 @app.get("/api/settings/scraper")
-async def get_scraper_settings():
-    """Returns the current per-source scraper configuration."""
+async def get_scraper_settings(_user: dict = Depends(require_auth)):
     return database.get_scraper_config(DB_PATH)
 
+
 @app.post("/api/settings/scraper")
-async def update_scraper_settings(payload: ScraperSettingsPayload):
-    """Saves the scraper configuration. Changes take effect on the next sync."""
+async def update_scraper_settings(payload: ScraperSettingsPayload, _user: dict = Depends(require_auth)):
     if not isinstance(payload.config, dict):
         raise HTTPException(status_code=400, detail="config must be a JSON object.")
     database.save_scraper_config(DB_PATH, payload.config)
-    return {"message": "Scraper settings saved. Changes apply on next sync."}
+    return {"message": "Scraper settings saved."}
 
-# --- Subscriber endpoints ---
+
+def validate_source_endpoint(url: str, source_type: str):
+    import requests
+    from bs4 import BeautifulSoup
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return False, f"URL returned HTTP status {resp.status_code}"
+        if source_type == "rss":
+            try:
+                soup = BeautifulSoup(resp.content, features="xml")
+            except Exception:
+                soup = BeautifulSoup(resp.content, "html.parser")
+            items = soup.find_all("item") or soup.find_all("entry")
+            if not items:
+                rss_link = None
+                for link in soup.find_all("link", rel="alternate"):
+                    ltype = link.get("type", "")
+                    if "rss" in ltype or "atom" in ltype or "xml" in ltype:
+                        rss_link = link.get("href")
+                        break
+                if rss_link:
+                    import urllib.parse
+                    resolved = urllib.parse.urljoin(url, rss_link)
+                    resp_rss = requests.get(resolved, headers=headers, timeout=10)
+                    if resp_rss.status_code == 200:
+                        try:
+                            soup_rss = BeautifulSoup(resp_rss.content, features="xml")
+                        except Exception:
+                            soup_rss = BeautifulSoup(resp_rss.content, "html.parser")
+                        if soup_rss.find_all("item") or soup_rss.find_all("entry"):
+                            return True, "Valid RSS feed discovered via alternate link."
+                return False, "No RSS/Atom <item> or <entry> tags found."
+        return True, "Source validated successfully."
+    except Exception as e:
+        return False, f"Validation failed: {str(e)}"
+
+
+@app.get("/api/sources")
+async def list_sources(_user: dict = Depends(require_auth)):
+    return database.get_sources(DB_PATH)
+
+
+@app.post("/api/sources")
+async def add_source(payload: SourcePayload, _user: dict = Depends(require_auth)):
+    name  = payload.name.strip()
+    url   = payload.url.strip()
+    stype = payload.source_type.strip().lower()
+    if not name or not url:
+        raise HTTPException(status_code=400, detail="Name and URL are required.")
+    if stype not in ["rss", "scrape"]:
+        raise HTTPException(status_code=400, detail="Invalid source type.")
+    import urllib.parse
+    try:
+        urllib.parse.urlparse(url)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid URL format.")
+    valid, msg = validate_source_endpoint(url, stype)
+    if not valid:
+        raise HTTPException(status_code=422, detail=f"Source validation failed: {msg}")
+    success = database.add_source(DB_PATH, name, url, stype, 1 if payload.enabled else 0)
+    if not success:
+        raise HTTPException(status_code=409, detail="A source with this URL already exists.")
+    return {"message": f"Source '{name}' added successfully."}
+
+
+@app.put("/api/sources/{id}")
+async def update_source(id: int, payload: SourcePayload, _user: dict = Depends(require_auth)):
+    name  = payload.name.strip()
+    url   = payload.url.strip()
+    stype = payload.source_type.strip().lower()
+    if not name or not url:
+        raise HTTPException(status_code=400, detail="Name and URL are required.")
+    if stype not in ["rss", "scrape"]:
+        raise HTTPException(status_code=400, detail="Invalid source type.")
+    valid, msg = validate_source_endpoint(url, stype)
+    if not valid:
+        raise HTTPException(status_code=422, detail=f"Source validation failed: {msg}")
+    success = database.update_source(DB_PATH, id, name, url, stype, 1 if payload.enabled else 0)
+    if not success:
+        raise HTTPException(status_code=404, detail="Source not found.")
+    return {"message": f"Source '{name}' updated successfully."}
+
+
+@app.delete("/api/sources/{id}")
+async def delete_source(id: int, _user: dict = Depends(require_auth)):
+    success = database.delete_source(DB_PATH, id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Source not found.")
+    return {"message": "Source deleted successfully."}
+
+
+@app.post("/api/sources/{id}/toggle")
+async def toggle_source(id: int, _user: dict = Depends(require_auth)):
+    success, new_state = database.toggle_source(DB_PATH, id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Source not found.")
+    return {"message": "Source toggled.", "enabled": bool(new_state)}
+
 
 @app.get("/api/subscribers")
-async def list_subscribers():
-    """Returns all registered email subscribers."""
+async def list_subscribers(_user: dict = Depends(require_auth)):
     subs = database.get_all_subscribers(DB_PATH)
     return {"subscribers": subs}
 
+
 @app.post("/api/subscribers")
-async def add_subscriber(payload: SubscriberPayload):
-    """Adds a new subscriber. Rejects duplicates and obviously invalid addresses."""
+async def add_subscriber(payload: SubscriberPayload, _user: dict = Depends(require_auth)):
     import re
     if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.email):
         raise HTTPException(status_code=400, detail="Invalid email address.")
@@ -371,134 +768,100 @@ async def add_subscriber(payload: SubscriberPayload):
         raise HTTPException(status_code=409, detail=f"{payload.email} is already subscribed.")
     return {"message": f"{payload.email} added successfully."}
 
+
 @app.delete("/api/subscribers/{email:path}")
-async def remove_subscriber(email: str):
-    """Removes a subscriber by email address."""
+async def remove_subscriber(email: str, _user: dict = Depends(require_auth)):
     removed = database.remove_subscriber(DB_PATH, email)
     if not removed:
         raise HTTPException(status_code=404, detail="Subscriber not found.")
     return {"message": f"{email} removed successfully."}
 
-# --- Test email endpoint ---
 
 @app.post("/api/email/test")
-async def send_test_email(payload: TestEmailPayload):
-    """Sends a one-off test digest email to the provided address."""
+async def send_test_email(payload: TestEmailPayload, _user: dict = Depends(require_auth)):
     import re
     if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.to):
         raise HTTPException(status_code=400, detail="Invalid recipient email address.")
-
-    smtp_settings = {
-        "host":      database.get_setting(DB_PATH, "smtp_host", ""),
-        "port":      int(database.get_setting(DB_PATH, "smtp_port", "587")),
-        "user":      database.get_setting(DB_PATH, "smtp_user", ""),
-        "password":  database.get_setting(DB_PATH, "smtp_password", ""),
-        "from_name": database.get_setting(DB_PATH, "smtp_from_name", "Daily AI Digest"),
-    }
+    smtp_settings = get_smtp_settings()
     if not smtp_settings["host"] or not smtp_settings["user"]:
-        raise HTTPException(status_code=400, detail="SMTP is not configured. Save your SMTP settings first.")
-
+        raise HTTPException(status_code=400, detail="SMTP is not configured.")
     target_date = payload.date.strip() if payload.date else datetime.now().strftime("%Y-%m-%d")
     digest_row  = database.get_digest(DB_PATH, target_date) or database.get_latest_digest(DB_PATH)
     if not digest_row:
-        raise HTTPException(status_code=404, detail="No digest available to send. Run a sync first.")
-
+        raise HTTPException(status_code=404, detail="No digest available to send.")
     recipients = [{"email": payload.to.strip(), "name": "Test Recipient"}]
     result = emailer.send_emails(smtp_settings, recipients, digest_row["content"], digest_row["date"])
-
     if result["sent"] > 0:
         return {"message": f"Test email sent to {payload.to}.", "result": result}
     raise HTTPException(status_code=500, detail=f"Send failed: {'; '.join(result['errors'])}")
 
-# --- EMAIL DISPATCH ---
+# ---------------------------------------------------------------------------
+# Scheduled email dispatch
+# ---------------------------------------------------------------------------
 
 def send_scheduled_emails(date_str):
-    """
-    Sends the digest to all active subscribers if email delivery is enabled.
-    Tracks the last sent date in settings to avoid sending duplicates.
-    """
     try:
         enabled = database.get_setting(DB_PATH, "email_enabled", "false").lower() == "true"
         if not enabled:
             return
-
         subscribers = database.get_active_subscribers(DB_PATH)
         if not subscribers:
-            logger.info("Email scheduler: No active subscribers — skipping delivery.")
+            logger.info("Email scheduler: No active subscribers.")
             return
-
-        smtp_settings = {
-            "host":      database.get_setting(DB_PATH, "smtp_host", ""),
-            "port":      int(database.get_setting(DB_PATH, "smtp_port", "587")),
-            "user":      database.get_setting(DB_PATH, "smtp_user", ""),
-            "password":  database.get_setting(DB_PATH, "smtp_password", ""),
-            "from_name": database.get_setting(DB_PATH, "smtp_from_name", "Daily AI Digest"),
-        }
+        smtp_settings = get_smtp_settings()
         if not smtp_settings["host"] or not smtp_settings["user"]:
-            logger.warning("Email scheduler: SMTP not configured — skipping delivery.")
+            logger.warning("Email scheduler: SMTP not configured.")
             return
-
         digest_row = database.get_digest(DB_PATH, date_str)
         if not digest_row:
-            logger.warning(f"Email scheduler: No digest for {date_str} — skipping.")
+            logger.warning(f"Email scheduler: No digest for {date_str}.")
             return
-
         logger.info(f"Email scheduler: Dispatching to {len(subscribers)} subscriber(s)...")
-        result = emailer.send_emails(
-            smtp_settings, subscribers, digest_row["content"], date_str
-        )
+        result = emailer.send_emails(smtp_settings, subscribers, digest_row["content"], date_str)
         database.save_setting(DB_PATH, "last_email_sent_date", date_str)
         add_log(f"Email delivery complete — sent: {result['sent']}, failed: {result['failed']}.")
         if result["errors"]:
             for err in result["errors"]:
-                logger.error(f"Email scheduler error: {err}")
-
+                logger.error(f"Email error: {err}")
     except Exception as exc:
         logger.error(f"send_scheduled_emails failed: {exc}")
 
-
-# --- BACKGROUND HOURLY SCHEDULER ---
+# ---------------------------------------------------------------------------
+# Background hourly scheduler
+# ---------------------------------------------------------------------------
 
 def start_hourly_scheduler():
-    """Runs a background daemon thread that performs an hourly check for the daily digest."""
     def scheduler_loop():
         logger.info("Hourly background scheduler daemon started.")
         while True:
             try:
                 now       = datetime.now()
                 today_str = now.strftime("%Y-%m-%d")
-
-                # Check if today's digest exists
-                conn = database.get_db_connection(DB_PATH)
-                cursor = conn.cursor()
+                conn      = database.get_db_connection(DB_PATH)
+                cursor    = conn.cursor()
                 cursor.execute("SELECT date FROM digests WHERE date = ?", (today_str,))
                 row = cursor.fetchone()
                 conn.close()
 
-                # If it doesn't exist and the system is idle, trigger auto-generation
                 if not row and SYNC_STATUS["status"] == "idle":
-                    logger.info(f"Auto-Scheduler: Today's digest ({today_str}) is missing. Auto-triggering run...")
+                    logger.info(f"Auto-Scheduler: Today's digest ({today_str}) missing. Auto-triggering...")
                     run_sync_job(today_str)
 
-                # Send scheduled emails at or after 7 AM if not yet sent today
                 if now.hour >= 7:
                     last_sent = database.get_setting(DB_PATH, "last_email_sent_date", "")
                     if last_sent != today_str:
                         send_scheduled_emails(today_str)
 
+                # Clean up expired sessions periodically
+                database.delete_expired_sessions(DB_PATH)
+
             except Exception as e:
                 logger.error(f"Error in background scheduler: {e}")
-
-            # Sleep for 1 hour (3600 seconds)
             time.sleep(3600)
 
     thread = threading.Thread(target=scheduler_loop, daemon=True)
     thread.start()
 
-# Trigger the hourly check on startup
-@app.on_event("startup")
-async def on_startup():
-    start_hourly_scheduler()
 
 if __name__ == "__main__":
     import uvicorn

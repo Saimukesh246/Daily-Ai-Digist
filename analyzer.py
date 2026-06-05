@@ -23,7 +23,19 @@ def run_offline_fallback(date_str, raw_items):
     """Compiles real crawled news items into the strict newsletter JSON schema without Gemini."""
     logger.info("No Gemini API key available. Running intelligent offline fallback...")
 
-    news_items  = [x for x in raw_items if x["category"] == "news"]
+    # Build news items by round-robining sources to ensure diversity in the offline fallback
+    by_source = {}
+    for x in raw_items:
+        if x["category"] == "news":
+            by_source.setdefault(x["source"], []).append(x)
+            
+    news_items = []
+    if by_source:
+        max_len = max(len(lst) for lst in by_source.values())
+        for i in range(max_len):
+            for src in sorted(by_source.keys()):
+                if i < len(by_source[src]):
+                    news_items.append(by_source[src][i])
     tool_items  = [x for x in raw_items if x["category"] == "tool"]
     paper_items = [x for x in raw_items if x["category"] == "paper"]
     repo_items  = [x for x in raw_items if x["category"] == "repo"]

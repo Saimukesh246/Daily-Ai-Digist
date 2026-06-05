@@ -334,3 +334,169 @@ def send_emails(smtp_settings, recipients, digest_content, date_str):
         logger.error(err)
 
     return results
+
+
+def send_login_confirmation_email(smtp_settings, to_email, to_name="", login_time=None, method="Email"):
+    """
+    Sends a 'You have successfully logged in' confirmation email to the user.
+
+    smtp_settings dict keys: host, port, user, password, from_name
+    login_time: datetime object (defaults to now)
+    method: login method string, e.g. 'Email', 'Google'
+    Returns: True on success, False on failure
+    """
+    if not smtp_settings.get("host") or not smtp_settings.get("user"):
+        logger.warning("Login email skipped — SMTP not configured.")
+        return False
+
+    if login_time is None:
+        login_time = datetime.utcnow()
+
+    try:
+        formatted_time = login_time.strftime("%A, %B %d, %Y at %H:%M UTC")
+    except Exception:
+        formatted_time = str(login_time)
+
+    display_name = to_name or to_email.split("@")[0]
+    subject = "✅ You've successfully logged in — Daily AI Digest"
+
+    html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Login Confirmation</title>
+</head>
+<body style="margin:0;padding:0;background-color:#060913;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#060913;">
+<tr><td align="center" style="padding:32px 12px;">
+<table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">
+
+  <!-- HEADER -->
+  <tr><td style="background:linear-gradient(135deg,#1a1040 0%,#0e1a35 100%);border-radius:16px 16px 0 0;padding:28px 36px;border-bottom:2px solid rgba(0,240,255,0.2);">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td>
+        <p style="color:#00f0ff;font-size:10px;text-transform:uppercase;letter-spacing:3px;margin:0 0 6px 0;font-family:Arial,Helvetica,sans-serif;">DAILY AI DIGEST</p>
+        <p style="color:#f1f5f9;font-size:22px;font-weight:900;margin:0;font-family:Arial,Helvetica,sans-serif;">Security Notification</p>
+      </td>
+      <td align="right" valign="middle">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#00ffaa,#00f0ff);display:flex;align-items:center;justify-content:center;font-size:24px;text-align:center;line-height:48px;">✅</div>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- SUCCESS BANNER -->
+  <tr><td style="background:#0b1e15;padding:28px 36px;border-left:3px solid #00ffaa;">
+    <p style="color:#00ffaa;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:0 0 8px 0;font-family:Arial,Helvetica,sans-serif;">LOGIN SUCCESSFUL</p>
+    <h2 style="color:#f1f5f9;font-size:20px;font-weight:700;margin:0 0 10px 0;line-height:1.4;font-family:Arial,Helvetica,sans-serif;">
+      Welcome back, {display_name}!
+    </h2>
+    <p style="color:#94a3b8;font-size:14px;margin:0;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+      You have successfully logged in to your <strong style="color:#f1f5f9;">Daily AI Digest</strong> account.
+    </p>
+  </td></tr>
+
+  <!-- LOGIN DETAILS -->
+  <tr><td style="background:#0e1426;padding:28px 36px;">
+    <h3 style="color:#00f0ff;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:0 0 16px 0;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.06);font-family:Arial,Helvetica,sans-serif;">Login Details</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid rgba(255,255,255,0.07);border-radius:10px;overflow:hidden;">
+      <tr style="background:rgba(0,240,255,0.04);">
+        <td style="padding:12px 18px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-family:Arial,Helvetica,sans-serif;font-weight:600;width:40%;">Account</td>
+        <td style="padding:12px 18px;color:#f1f5f9;font-size:14px;font-family:Arial,Helvetica,sans-serif;">{to_email}</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 18px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-family:Arial,Helvetica,sans-serif;font-weight:600;border-top:1px solid rgba(255,255,255,0.05);">Time</td>
+        <td style="padding:12px 18px;color:#f1f5f9;font-size:14px;font-family:Arial,Helvetica,sans-serif;border-top:1px solid rgba(255,255,255,0.05);">{formatted_time}</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 18px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-family:Arial,Helvetica,sans-serif;font-weight:600;border-top:1px solid rgba(255,255,255,0.05);">Method</td>
+        <td style="padding:12px 18px;color:#f1f5f9;font-size:14px;font-family:Arial,Helvetica,sans-serif;border-top:1px solid rgba(255,255,255,0.05);">{method}</td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- SECURITY NOTICE -->
+  <tr><td style="background:#1a0f14;padding:20px 36px;border-left:3px solid #ff2e63;">
+    <p style="color:#ff2e63;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;margin:0 0 6px 0;font-family:Arial,Helvetica,sans-serif;font-weight:600;">⚠ Security Notice</p>
+    <p style="color:#94a3b8;font-size:13px;margin:0;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+      If you did not initiate this login, your account may be compromised. Please contact your system administrator immediately.
+    </p>
+  </td></tr>
+
+  <!-- CTA -->
+  <tr><td style="background:linear-gradient(135deg,#1a1040 0%,#0e1a35 100%);padding:24px 36px;text-align:center;border-top:1px solid rgba(181,95,230,0.2);">
+    <p style="color:#94a3b8;font-size:13px;margin:0 0 14px 0;font-family:Arial,Helvetica,sans-serif;">Ready to explore today's AI intelligence?</p>
+    <a href="{_APP_URL}" style="display:inline-block;background:linear-gradient(135deg,#b55fe6,#00f0ff);color:#060913;font-weight:700;font-size:14px;text-decoration:none;padding:12px 28px;border-radius:8px;font-family:Arial,Helvetica,sans-serif;">Open Dashboard &#8594;</a>
+  </td></tr>
+
+  <!-- FOOTER -->
+  <tr><td style="background:#060913;padding:16px 36px;border-radius:0 0 16px 16px;border-top:1px solid rgba(255,255,255,0.04);">
+    <p style="color:#334155;font-size:11px;text-align:center;margin:0;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+      Daily AI Digest &bull; Autonomous AI Intelligence System<br>
+      This is an automated security notification. Do not reply to this email.
+    </p>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    plain_body = f"""LOGIN CONFIRMATION — Daily AI Digest
+{'='*48}
+
+Hello {display_name},
+
+You have successfully logged in to your Daily AI Digest account.
+
+Login Details:
+  Account : {to_email}
+  Time    : {formatted_time}
+  Method  : {method}
+
+If you did not initiate this login, please contact your system administrator immediately.
+
+Open Dashboard: {_APP_URL}
+
+—
+Daily AI Digest | Automated Security Notification
+"""
+
+    host      = smtp_settings.get("host", "")
+    port      = int(smtp_settings.get("port", 587))
+    user      = smtp_settings.get("user", "")
+    password  = smtp_settings.get("password", "")
+    from_name = smtp_settings.get("from_name", "Daily AI Digest")
+    from_addr = user
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = formataddr((from_name, from_addr))
+        msg["To"]      = formataddr((display_name, to_email))
+        msg.attach(MIMEText(plain_body, "plain", "utf-8"))
+        msg.attach(MIMEText(html_body,  "html",  "utf-8"))
+
+        if port == 465:
+            ctx    = ssl.create_default_context()
+            server = smtplib.SMTP_SSL(host, port, context=ctx, timeout=20)
+        else:
+            server = smtplib.SMTP(host, port, timeout=20)
+            server.ehlo()
+            if port == 587:
+                server.starttls(context=ssl.create_default_context())
+                server.ehlo()
+
+        if user and password:
+            server.login(user, password)
+
+        server.sendmail(from_addr, [to_email], msg.as_string())
+        server.quit()
+        logger.info(f"Login confirmation email sent to {to_email}")
+        return True
+
+    except Exception as exc:
+        logger.error(f"Failed to send login confirmation to {to_email}: {exc}")
+        return False
+

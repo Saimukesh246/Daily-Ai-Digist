@@ -12,7 +12,7 @@ logger = logging.getLogger("fetcher")
 
 # Custom headers to prevent blocks (particularly from Reddit and other sensitive platforms)
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (AI-Digest-Bot/1.0; contact: admin@aidigest.local)"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
 }
 
 def safe_request(url, headers=HEADERS, timeout=10):
@@ -235,44 +235,11 @@ def fetch_product_hunt_ai():
             logger.error(f"Error parsing Product Hunt RSS: {e}")
     return products
 
-def fetch_lab_blogs():
-    """Fetches blog/news updates from major AI labs using standard feeds."""
-    logger.info("Fetching AI Lab Blogs (OpenAI, DeepMind, Anthropic)...")
-    feeds = [
-        {"name": "OpenAI Blog", "url": "https://openai.com/news/rss/", "category": "news"},
-        {"name": "Google DeepMind Blog", "url": "https://deepmind.google/blog/rss.xml", "category": "news"}
-    ]
+def fetch_anthropic_custom_scrape(url, name="Anthropic Blog"):
+    """Encapsulates custom frontpage scraping logic for Anthropic News."""
+    logger.info(f"Crawling custom scrape Anthropic Blog: {url}...")
     articles = []
-    
-    for feed in feeds:
-        response = safe_request(feed["url"])
-        if response:
-            try:
-                soup = BeautifulSoup(response.content, features="xml")
-                # RSS item is usually <item> or <entry>
-                items = soup.find_all("item") or soup.find_all("entry")
-                for item in items[:5]: # Take top 5 recent announcements
-                    title = item.find("title").text.strip()
-                    url_link = (item.find("link").text or item.find("link").get("href") or "").strip()
-                    description_el = item.find("description") or item.find("summary")
-                    desc = description_el.text.strip() if description_el else "New announcement from lab blog."
-                    # Strip HTML
-                    desc = BeautifulSoup(desc, "html.parser").get_text()
-                    desc = desc[:250] + "..." if len(desc) > 250 else desc
-                    
-                    articles.append({
-                        "source": feed["name"],
-                        "title": title,
-                        "description": desc,
-                        "url": url_link,
-                        "category": feed["category"]
-                    })
-            except Exception as e:
-                logger.error(f"Error parsing RSS for {feed['name']}: {e}")
-                
-    # Anthropic lacks a standard stable RSS feed, scrape their news directory frontpage
-    anthropic_url = "https://www.anthropic.com/news"
-    response = safe_request(anthropic_url)
+    response = safe_request(url)
     if response:
         try:
             soup = BeautifulSoup(response.content, "html.parser")
@@ -305,7 +272,6 @@ def fetch_lab_blogs():
                     continue
 
                 # Build a real description from the cleaned title
-                slug = href.rstrip("/").split("/")[-1].replace("-", " ").title()
                 description = (
                     f"{clean} — new from Anthropic's blog."
                     if len(clean) < 120
@@ -313,7 +279,7 @@ def fetch_lab_blogs():
                 )
 
                 articles.append({
-                    "source": "Anthropic Blog",
+                    "source": name,
                     "title": clean,
                     "description": description,
                     "url": full_url,
@@ -321,8 +287,167 @@ def fetch_lab_blogs():
                 })
         except Exception as e:
             logger.error(f"Error crawling Anthropic blog: {e}")
+    return articles
+
+
+def fetch_lab_blogs(db_path=None):
+    """Fetches news updates dynamically from active database-defined sources."""
+    logger.info("Fetching dynamic blog and news sources...")
+    import database
+    if not db_path:
+        db_path = database.DEFAULT_DB_PATH
+        
+    sources = database.get_sources(db_path)
+    articles = []
+    
+    for src in sources:
+        if not src.get("enabled", 1):
+            continue
+            
+        name = src["name"]
+        url = src["url"]
+        stype = src["source_type"]
+        
+        try:
+            if stype == "rss":
+                # Fetch as standard RSS
+                items = fetch_custom_rss(url, name, limit=10, category="news")
+                articles.extend(items)
+            elif stype == "scrape":
+                # If Anthropic, use its special scraping logic
+                if "anthropic.com" in url.lower():
+                    items = fetch_anthropic_custom_scrape(url, name)
+                    articles.extend(items)
+                else:
+                    # Generic scraping fallback (discovers RSS or parses HTML page links)
+                    items = fetch_custom_rss(url, name, limit=10, category="news")
+                    articles.extend(items)
+        except Exception as e:
+            logger.error(f"Error fetching dynamic source {name} ({url}): {e}")
             
     return articles
+
+
+def fetch_custom_rss(feed_url, name="Custom RSS", limit=10, category="news"):
+    """Fetches articles from a custom RSS/Atom feed or web page auto-discovering feed."""
+    logger.info(f"Fetching custom source: {name} from {feed_url}...")
+    response = safe_request(feed_url)
+    if not response:
+        # Check if the URL might be a broken feed sub-path, try parent path auto-discovery
+        clean_url = feed_url.rstrip("/")
+        if clean_url.endswith("/rss") or clean_url.endswith("/feed"):
+            try:
+                parent_url = clean_url.rsplit("/", 1)[0] + "/"
+                logger.info(f"Initial feed request failed, attempting parent path auto-discovery: {parent_url}...")
+                response = safe_request(parent_url)
+            except Exception:
+                pass
+        if not response:
+            return []
+        
+    content_type = response.headers.get("Content-Type", "").lower()
+    
+    # Auto-discover feed if HTML
+    if "html" in content_type or response.text.strip().startswith("<!DOCTYPE html") or response.text.strip().startswith("<html"):
+        try:
+            soup = BeautifulSoup(response.content, "html.parser")
+            rss_link = None
+            for link in soup.find_all("link", rel="alternate"):
+                ltype = link.get("type", "")
+                if "rss" in ltype or "atom" in ltype or "xml" in ltype:
+                    rss_link = link.get("href")
+                    break
+            if rss_link:
+                resolved_url = urllib.parse.urljoin(feed_url, rss_link)
+                logger.info(f"Auto-discovered RSS feed URL for {name}: {resolved_url}")
+                response = safe_request(resolved_url)
+                if not response:
+                    return []
+            else:
+                # If no RSS feed is alternate, let's try a basic HTML scrape fallback:
+                # Find all <a> tags with text and href that are probably articles
+                logger.warning(f"No RSS feed link discovered in HTML for {name}. Attempting basic scrape...")
+                articles = []
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    title_text = a.get_text(" ", strip=True)
+                    if len(title_text) > 15 and not (href.startswith("#") or href.startswith("mailto:") or href.startswith("javascript:") or href.startswith("tel:")):
+                        full_url = urllib.parse.urljoin(feed_url, href)
+                        # Avoid duplicates
+                        if not any(art["url"] == full_url for art in articles):
+                            articles.append({
+                                "source": name,
+                                "title": title_text,
+                                "description": f"Article from {name} (auto-scraped link).",
+                                "url": full_url,
+                                "category": category
+                            })
+                            if len(articles) >= limit:
+                                break
+                return articles
+        except Exception as e:
+            logger.error(f"HTML discovery failed for {name}: {e}")
+            return []
+            
+    # Parse RSS/Atom XML
+    articles = []
+    try:
+        try:
+            soup = BeautifulSoup(response.content, features="xml")
+        except Exception:
+            soup = BeautifulSoup(response.content, "html.parser")
+            
+        items = soup.find_all("item") or soup.find_all("entry")
+        for item in items[:limit]:
+            title_el = item.find("title")
+            title = title_el.text.strip() if title_el else "No Title"
+            
+            link_el = item.find("link")
+            url_link = ""
+            if link_el:
+                url_link = (link_el.text or link_el.get("href") or "").strip()
+                if not url_link:
+                    next_sib = link_el.next_sibling
+                    if next_sib and hasattr(next_sib, "name") and next_sib.name is None:
+                        url_link = str(next_sib).strip()
+                    elif next_sib and isinstance(next_sib, str):
+                        url_link = next_sib.strip()
+            
+            if not url_link:
+                atom_links = item.find_all("link")
+                for alink in atom_links:
+                    if alink.get("rel") == "alternate" or not alink.get("rel"):
+                        url_link = (alink.get("href") or "").strip()
+                        break
+
+            if not url_link:
+                guid_el = item.find("guid")
+                if guid_el and (guid_el.get("ispermalink") == "true" or not guid_el.get("ispermalink")):
+                    url_link = guid_el.text.strip()
+                        
+            description_el = item.find("description") or item.find("summary") or item.find("content")
+            desc = ""
+            if description_el:
+                desc = description_el.text.strip()
+                # Strip HTML tags
+                desc = BeautifulSoup(desc, "html.parser").get_text()
+                desc = desc[:250] + "..." if len(desc) > 250 else desc
+            else:
+                desc = f"New article from {name}."
+                
+            if url_link:
+                url_link = urllib.parse.urljoin(feed_url, url_link)
+                articles.append({
+                    "source": name,
+                    "title": title,
+                    "description": desc,
+                    "url": url_link,
+                    "category": category
+                })
+    except Exception as e:
+        logger.error(f"Error parsing custom RSS {name} feed: {e}")
+    return articles
+
 
 def fetch_all_sources(date_str, config=None):
     """Orchestrates data fetching across all targets, compiling items into a flat list."""
@@ -389,6 +514,20 @@ def fetch_all_sources(date_str, config=None):
             all_items.extend(fetch_lab_blogs())
         except Exception as e:
             logger.error(f"Error fetching lab blogs: {e}")
+
+    # 8. Custom RSS feeds
+    custom_rss = config.get("custom_rss", [])
+    for source in custom_rss:
+        if source.get("enabled", True):
+            try:
+                name = source.get("name", "Custom RSS")
+                feed_url = source.get("url")
+                limit = source.get("limit", 10)
+                category = source.get("category", "news")
+                if feed_url:
+                    all_items.extend(fetch_custom_rss(feed_url, name, limit, category))
+            except Exception as e:
+                logger.error(f"Error fetching custom source {source.get('name')}: {e}")
         
     # Deduplicate based on URL
     unique_items = []

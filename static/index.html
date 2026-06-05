@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Daily AI Digest — Premium AI Intelligence Dashboard</title>
+    <meta name="description" content="Your autonomous daily briefing on AI innovation, research breakthroughs, and market movements.">
     <!-- Premium Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,11 +12,135 @@
     <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom Style System -->
-    <link rel="stylesheet" href="/static/css/styles.css?v=3">
+    <link rel="stylesheet" href="/static/css/styles.css?v=4">
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-    <div class="app-container">
-        
+
+    <!-- ============================================================
+         AUTH MODAL — shown when user is not authenticated
+         ============================================================ -->
+    <div class="auth-backdrop" id="auth-backdrop">
+        <div class="auth-modal" id="auth-modal" role="dialog" aria-modal="true" aria-label="Log in or sign up">
+
+            <!-- Header -->
+            <div class="auth-modal-header">
+                <div class="auth-brand-pill">
+                    <i class="fa-solid fa-brain-circuit"></i> AI Digest
+                </div>
+                <h2 class="auth-title">Log in or sign up</h2>
+                <p class="auth-subtitle">Access your daily AI intelligence briefing and stay ahead of the curve.</p>
+            </div>
+
+            <!-- Step 1: Provider selection -->
+            <div class="auth-step" id="auth-step-providers">
+
+                <!-- Google Button -->
+                <button class="auth-provider-btn" id="btn-google-login">
+                    <svg class="google-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                    Continue with Google
+                </button>
+
+                <div class="auth-divider">
+                    <span class="auth-divider-line"></span>
+                    <span class="auth-divider-text">OR</span>
+                    <span class="auth-divider-line"></span>
+                </div>
+
+                <!-- Email input -->
+                <div class="auth-input-group">
+                    <input
+                        type="email"
+                        id="auth-email-input"
+                        class="auth-input"
+                        placeholder="Email address"
+                        autocomplete="email"
+                        spellcheck="false"
+                    >
+                </div>
+
+                <button class="auth-continue-btn" id="btn-auth-continue">Continue</button>
+
+                <p class="auth-legal">
+                    By continuing, you agree to the <strong>Daily AI Digest</strong> terms of service.
+                </p>
+            </div>
+
+            <!-- Step 2: Password (login or register) -->
+            <div class="auth-step hidden" id="auth-step-password">
+                <button class="auth-back-btn" id="btn-auth-back">
+                    <i class="fa-solid fa-arrow-left"></i> Back
+                </button>
+
+                <div class="auth-email-display" id="auth-email-display">
+                    <i class="fa-regular fa-envelope"></i>
+                    <span id="auth-email-show"></span>
+                </div>
+
+                <div class="auth-mode-label" id="auth-mode-label">Enter your password</div>
+
+                <div class="auth-input-group">
+                    <input
+                        type="text"
+                        id="auth-name-input"
+                        class="auth-input hidden"
+                        placeholder="Your name (optional)"
+                        autocomplete="name"
+                    >
+                </div>
+
+                <div class="auth-input-group">
+                    <input
+                        type="password"
+                        id="auth-password-input"
+                        class="auth-input"
+                        placeholder="Password"
+                        autocomplete="current-password"
+                    >
+                    <button class="auth-input-eye" id="btn-toggle-password" type="button" tabindex="-1">
+                        <i class="fa-regular fa-eye" id="eye-icon"></i>
+                    </button>
+                </div>
+
+                <div class="auth-input-group hidden" id="auth-confirm-group">
+                    <input
+                        type="password"
+                        id="auth-confirm-input"
+                        class="auth-input"
+                        placeholder="Confirm password"
+                        autocomplete="new-password"
+                    >
+                </div>
+
+                <div class="auth-error hidden" id="auth-error-msg">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span id="auth-error-text"></span>
+                </div>
+
+                <button class="auth-continue-btn" id="btn-auth-submit">
+                    <span id="auth-submit-label">Log in</span>
+                    <i class="fa-solid fa-circle-notch fa-spin hidden" id="auth-spinner"></i>
+                </button>
+
+                <p class="auth-toggle-mode" id="auth-toggle-mode-link">
+                    Don't have an account? <a href="#" id="btn-toggle-auth-mode">Create one</a>
+                </p>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ============================================================
+         MAIN APP (hidden until authenticated)
+         ============================================================ -->
+    <div class="app-container hidden" id="main-app">
+
         <!-- Sidebar Navigation -->
         <aside class="app-sidebar" id="app-sidebar-nav">
             <div class="brand">
@@ -33,7 +158,6 @@
             <div class="sidebar-menu">
                 <h3><i class="fa-regular fa-calendar-days"></i> Past Digests</h3>
                 <ul class="digest-history-list" id="digest-history-list">
-                    <!-- Historical dates loaded dynamically -->
                     <li class="loading-placeholder">Loading history...</li>
                 </ul>
             </div>
@@ -45,7 +169,7 @@
 
         <!-- Main Dashboard Viewport -->
         <main class="app-viewport">
-            
+
             <!-- Top Dashboard Header -->
             <header class="viewport-header">
                 <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Open menu">
@@ -64,6 +188,23 @@
                     <span class="status-indicator status-idle"></span>
                     <span class="status-text">System Idle</span>
                 </div>
+                <!-- User Profile Pill -->
+                <div class="user-profile-pill" id="user-profile-pill">
+                    <div class="user-avatar" id="user-avatar">
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                    <span class="user-name" id="user-name-label">User</span>
+                    <div class="user-dropdown" id="user-dropdown">
+                        <div class="user-dropdown-info">
+                            <span class="user-dropdown-name" id="dropdown-name"></span>
+                            <span class="user-dropdown-email" id="dropdown-email"></span>
+                        </div>
+                        <div class="user-dropdown-divider"></div>
+                        <button class="user-dropdown-item" id="btn-logout">
+                            <i class="fa-solid fa-right-from-bracket"></i> Sign Out
+                        </button>
+                    </div>
+                </div>
             </header>
 
             <!-- Dashboard Content Container -->
@@ -80,18 +221,16 @@
                     </div>
                 </section>
 
-                <!-- 1. Section: Biggest AI News Today -->
+                <!-- 1. Biggest AI News Today -->
                 <section class="dashboard-section" id="news-section">
                     <div class="section-header">
                         <h3><i class="fa-regular fa-newspaper"></i> 1. Biggest AI News Today</h3>
                         <span class="section-tagline">Curated top stories shaping the intelligence ecosystem</span>
                     </div>
-                    <div class="news-grid" id="news-grid-container">
-                        <!-- Dynamic news cards injected here -->
-                    </div>
+                    <div class="news-grid" id="news-grid-container"></div>
                 </section>
 
-                <!-- 2. Section: Discovered Tools -->
+                <!-- 2. Discovered Tools -->
                 <section class="dashboard-section" id="tools-section">
                     <div class="section-header">
                         <h3><i class="fa-solid fa-cubes-stacked"></i> 2. New AI Tools Discovered</h3>
@@ -109,14 +248,12 @@
                                     <th>Action</th>
                                 </tr>
                             </thead>
-                            <tbody id="tools-table-body">
-                                <!-- Dynamic rows injected here -->
-                            </tbody>
+                            <tbody id="tools-table-body"></tbody>
                         </table>
                     </div>
                 </section>
 
-                <!-- 3. Section: What Changed Since Yesterday -->
+                <!-- 3. What Changed Since Yesterday -->
                 <section class="dashboard-section" id="changes-section">
                     <div class="section-header">
                         <h3><i class="fa-solid fa-clock-rotate-left"></i> 3. What Changed Since Yesterday</h3>
@@ -132,56 +269,46 @@
                                     <th>Why It Matters</th>
                                 </tr>
                             </thead>
-                            <tbody id="changes-table-body">
-                                <!-- Dynamic rows injected here -->
-                            </tbody>
+                            <tbody id="changes-table-body"></tbody>
                         </table>
                     </div>
                 </section>
 
-                <!-- 4. Section: Trending AI Workflows -->
+                <!-- 4. Trending AI Workflows -->
                 <section class="dashboard-section" id="workflows-section">
                     <div class="section-header">
                         <h3><i class="fa-solid fa-network-wired"></i> 4. Trending AI Workflows</h3>
                         <span class="section-tagline">Practical, high-value blueprints developers and business managers are deploying</span>
                     </div>
-                    <div class="workflows-grid" id="workflows-grid-container">
-                        <!-- Dynamic workflows injected here -->
-                    </div>
+                    <div class="workflows-grid" id="workflows-grid-container"></div>
                 </section>
 
-                <!-- 5. Section: Open Source & Research -->
+                <!-- 5. Open Source & Research -->
                 <section class="dashboard-section" id="research-section">
                     <div class="section-header">
-                        <h3><i class="fa-solid fa-graduation-cap"></i> 5. Open Source & Technical Research</h3>
+                        <h3><i class="fa-solid fa-graduation-cap"></i> 5. Open Source &amp; Technical Research</h3>
                         <span class="section-tagline">Breaking down complex preprints, model benchmarks, and starred repositories</span>
                     </div>
-                    <div class="research-grid" id="research-grid-container">
-                        <!-- Dynamic research cards injected here -->
-                    </div>
+                    <div class="research-grid" id="research-grid-container"></div>
                 </section>
 
-                <!-- 6. Section: Market & Industry Movements -->
+                <!-- 6. Market & Industry Movements -->
                 <section class="dashboard-section" id="market-section">
                     <div class="section-header">
-                        <h3><i class="fa-solid fa-chart-line-up"></i> 6. Market & Industry Movements</h3>
+                        <h3><i class="fa-solid fa-chart-line-up"></i> 6. Market &amp; Industry Movements</h3>
                         <span class="section-tagline">Venture rounds, enterprise integrations, chip shortages, and datacenter expansions</span>
                     </div>
-                    <div class="market-grid" id="market-grid-container">
-                        <!-- Dynamic market cards injected here -->
-                    </div>
+                    <div class="market-grid" id="market-grid-container"></div>
                 </section>
 
-                <!-- 7. Section: Quick Takes & Future Forecast -->
+                <!-- 7 & 8. Quick Takes + What to Watch -->
                 <div class="two-column-footer">
                     <section class="dashboard-section Column" id="takes-section">
                         <div class="section-header">
                             <h3><i class="fa-regular fa-lightbulb"></i> 7. Quick Takes</h3>
                             <span class="section-tagline">Sharp opinions on underrated vs. overhyped trends</span>
                         </div>
-                        <div class="takes-list" id="takes-list-container">
-                            <!-- Dynamic opinions injected here -->
-                        </div>
+                        <div class="takes-list" id="takes-list-container"></div>
                     </section>
 
                     <section class="dashboard-section Column" id="watch-section">
@@ -189,9 +316,7 @@
                             <h3><i class="fa-regular fa-compass"></i> 8. What to Watch Tomorrow</h3>
                             <span class="section-tagline">Upcoming announcements, tracking trends, and developing discussions</span>
                         </div>
-                        <ul class="watch-list" id="watch-list-container">
-                            <!-- Dynamic watch bullets injected here -->
-                        </ul>
+                        <ul class="watch-list" id="watch-list-container"></ul>
                     </section>
                 </div>
 
@@ -218,9 +343,7 @@
                         <span>CRAWLER CONSOLE LOGS</span>
                         <span class="console-pulse">● LIVE</span>
                     </div>
-                    <div class="console-logs" id="console-logs-container">
-                        <!-- Log lines appended here -->
-                    </div>
+                    <div class="console-logs" id="console-logs-container"></div>
                 </div>
             </div>
         </div>
@@ -230,7 +353,7 @@
     <div class="modal-overlay hidden" id="settings-modal-overlay">
         <div class="settings-card">
             <div class="settings-header">
-                <h2><i class="fa-solid fa-sliders"></i> Configuration & Credentials</h2>
+                <h2><i class="fa-solid fa-sliders"></i> Configuration &amp; Credentials</h2>
                 <button class="btn-close" id="btn-close-settings"><i class="fa-solid fa-xmark"></i></button>
             </div>
 
@@ -243,7 +366,10 @@
                     <i class="fa-solid fa-envelope"></i> Email Delivery
                 </button>
                 <button class="settings-tab-btn" data-tab="sources">
-                    <i class="fa-solid fa-toggle-on"></i> Sources
+                    <i class="fa-solid fa-toggle-on"></i> Core Scrapers
+                </button>
+                <button class="settings-tab-btn" data-tab="news-feeds">
+                    <i class="fa-solid fa-rss"></i> Blogs &amp; RSS
                 </button>
             </div>
 
@@ -268,8 +394,6 @@
             <!-- Tab Panel: Email Delivery -->
             <div class="settings-tab-panel hidden" id="settings-panel-email">
                 <div class="settings-body">
-
-                    <!-- SMTP Configuration -->
                     <div class="email-section">
                         <h4 class="email-section-title"><i class="fa-solid fa-server"></i> SMTP Configuration</h4>
                         <p class="settings-explanation">Works with Gmail (port 587), Outlook, SendGrid, or any SMTP provider. For Gmail, use an App Password, not your account password.</p>
@@ -311,7 +435,6 @@
                         </div>
                     </div>
 
-                    <!-- Subscriber Management -->
                     <div class="email-section">
                         <h4 class="email-section-title"><i class="fa-solid fa-users"></i> Subscribers</h4>
                         <div class="subscriber-add-row">
@@ -325,7 +448,6 @@
                         </ul>
                     </div>
 
-                    <!-- Test Send -->
                     <div class="email-section">
                         <h4 class="email-section-title"><i class="fa-solid fa-paper-plane"></i> Test Delivery</h4>
                         <div class="subscriber-add-row">
@@ -345,7 +467,7 @@
             <div class="settings-tab-panel hidden" id="settings-panel-sources">
                 <div class="settings-body">
                     <p class="settings-explanation">
-                        Toggle sources on or off and tune how many results each one fetches. For Reddit and GitHub you can also customise which subreddits and keywords are searched. Changes apply on the next <strong>Sync</strong>.
+                        Toggle sources on or off and tune how many results each one fetches. Changes apply on the next <strong>Sync</strong>.
                     </p>
                     <div id="scraper-source-list">
                         <p class="settings-explanation">Loading sources...</p>
@@ -353,6 +475,37 @@
                     <div class="form-actions" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:16px; margin-top:4px;">
                         <span class="key-status-text" id="scraper-status-text"></span>
                         <button class="btn btn-primary" id="btn-save-scraper" style="width:auto;"><i class="fa-solid fa-floppy-disk"></i> Save Sources</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Panel: Blogs & RSS -->
+            <div class="settings-tab-panel hidden" id="settings-panel-news-feeds">
+                <div class="settings-body">
+                    <p class="settings-explanation">
+                        Manage dynamic blog, newsletter, and RSS feed sources. Pasting a standard news or blog page URL will trigger our system to search for and auto-discover its underlying RSS feeds.
+                    </p>
+                    <div class="email-section" style="margin-bottom: 20px;">
+                        <h4 class="email-section-title"><i class="fa-solid fa-plus"></i> Add News Source</h4>
+                        <div class="custom-source-add-row" style="display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+                            <input type="hidden" id="feed-edit-id" value="">
+                            <input type="text" id="feed-name-input" placeholder="Source Name (e.g. Perplexity Blog)" class="sub-email-field" style="flex: 1.2; min-width: 150px;">
+                            <input type="url" id="feed-url-input" placeholder="Website or RSS Feed URL" class="sub-email-field" style="flex: 2; min-width: 250px;">
+                            <select id="feed-type-select" class="custom-select-field" style="flex: 0.8; min-width: 100px;">
+                                <option value="rss">RSS / Atom</option>
+                                <option value="scrape">HTML Scrape</option>
+                            </select>
+                            <button type="button" class="btn btn-primary" id="btn-save-feed" style="width: auto; height: 38px; display: flex; align-items: center; justify-content: center; gap: 6px;"><i class="fa-solid fa-plus"></i> Add Source</button>
+                            <button type="button" class="btn btn-secondary hidden" id="btn-cancel-edit-feed" style="width: auto; height: 38px; margin-left: 5px;">Cancel</button>
+                        </div>
+                        <span class="key-status-text" id="feed-status-text" style="display: block; margin-bottom: 8px;"></span>
+                    </div>
+                    <div class="email-section">
+                        <h4 class="email-section-title"><i class="fa-solid fa-list"></i> Active News Feeds</h4>
+                        <div id="dynamic-feeds-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 200px; overflow-y: auto; padding-right: 4px;"></div>
+                    </div>
+                    <div class="form-actions" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:16px; margin-top:20px;">
+                        <button class="btn btn-secondary" id="btn-close-feeds">Close</button>
                     </div>
                 </div>
             </div>
@@ -383,6 +536,6 @@
     </div>
 
     <!-- Dynamic JavaScript Engine -->
-    <script src="/static/js/app.js?v=3"></script>
+    <script src="/static/js/app.js?v=4"></script>
 </body>
 </html>

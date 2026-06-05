@@ -1,9 +1,317 @@
 /* ==========================================================================
    Daily AI Digest - Dashboard JS Controller
-   Handles: API communication, Dynamic DOM injection, Sync Polling, Settings
+   Handles: Auth, API communication, Dynamic DOM injection, Sync Polling, Settings
    ========================================================================== */
 
-document.addEventListener("DOMContentLoaded", () => {
+// =============================================================================
+// AUTH LAYER — Token storage + auth-aware fetch
+// =============================================================================
+
+const AUTH_KEY = "aid_session_token";
+const USER_KEY = "aid_user_info";
+
+function getToken() { return localStorage.getItem(AUTH_KEY); }
+function getUser()  { try { return JSON.parse(localStorage.getItem(USER_KEY) || "null"); } catch { return null; } }
+function saveAuth(token, user) {
+    localStorage.setItem(AUTH_KEY, token);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+function clearAuth() {
+    localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem(USER_KEY);
+}
+
+/** Fetch wrapper that automatically injects the Bearer token. */
+async function apiFetch(url, options = {}) {
+    const token = getToken();
+    const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(url, { ...options, headers });
+}
+
+// =============================================================================
+// AUTH MODAL CONTROLLER
+// =============================================================================
+
+(function initAuthModal() {
+    const backdrop        = document.getElementById("auth-backdrop");
+    const mainApp         = document.getElementById("main-app");
+    const stepProviders   = document.getElementById("auth-step-providers");
+    const stepPassword    = document.getElementById("auth-step-password");
+    const emailInput      = document.getElementById("auth-email-input");
+    const nameInput       = document.getElementById("auth-name-input");
+    const passwordInput   = document.getElementById("auth-password-input");
+    const confirmInput    = document.getElementById("auth-confirm-input");
+    const confirmGroup    = document.getElementById("auth-confirm-group");
+    const eyeIcon         = document.getElementById("eye-icon");
+    const btnTogglePwd    = document.getElementById("btn-toggle-password");
+    const btnContinue     = document.getElementById("btn-auth-continue");
+    const btnBack         = document.getElementById("btn-auth-back");
+    const btnSubmit       = document.getElementById("btn-auth-submit");
+    const btnGoogleLogin  = document.getElementById("btn-google-login");
+    const btnToggleMode   = document.getElementById("btn-toggle-auth-mode");
+    const authEmailShow   = document.getElementById("auth-email-show");
+    const modeLabel       = document.getElementById("auth-mode-label");
+    const submitLabel     = document.getElementById("auth-submit-label");
+    const spinner         = document.getElementById("auth-spinner");
+    const errorBox        = document.getElementById("auth-error-msg");
+    const errorText       = document.getElementById("auth-error-text");
+
+    let isRegisterMode = false;
+
+    function showError(msg) {
+        errorText.textContent = msg;
+        errorBox.classList.remove("hidden");
+    }
+    function hideError() { errorBox.classList.add("hidden"); }
+
+    function setLoading(on) {
+        btnSubmit.disabled = on;
+        spinner.classList.toggle("hidden", !on);
+    }
+
+    function showApp(user) {
+        // Hide auth backdrop, reveal app
+        backdrop.style.display = "none";
+        mainApp.classList.remove("hidden");
+        // Update user profile pill
+        updateUserPill(user);
+        // Boot main dashboard
+        bootDashboard();
+    }
+
+    async function checkExistingSession() {
+        const token = getToken();
+        if (!token) return;
+        try {
+            const res = await apiFetch("/api/auth/me");
+            if (res.ok) {
+                const user = await res.json();
+                saveAuth(token, user);
+                showApp(user);
+            } else {
+                clearAuth();
+            }
+        } catch {
+            clearAuth();
+        }
+    }
+
+    // Step 1 → Step 2
+    btnContinue && btnContinue.addEventListener("click", () => {
+        const email = emailInput.value.trim();
+        if (!email || !email.includes("@")) {
+            emailInput.style.borderColor = "rgba(255,46,99,0.6)";
+            emailInput.focus();
+            return;
+        }
+        emailInput.style.borderColor = "";
+        authEmailShow.textContent = email;
+        stepProviders.classList.add("hidden");
+        stepPassword.classList.remove("hidden");
+        // Default: login mode
+        isRegisterMode = false;
+        updatePasswordStep();
+        passwordInput.focus();
+    });
+
+    emailInput && emailInput.addEventListener("keydown", e => {
+        if (e.key === "Enter") btnContinue && btnContinue.click();
+    });
+
+    // Back to step 1
+    btnBack && btnBack.addEventListener("click", () => {
+        stepPassword.classList.add("hidden");
+        stepProviders.classList.remove("hidden");
+        hideError();
+        passwordInput.value = "";
+        confirmInput.value  = "";
+        nameInput.value     = "";
+    });
+
+    // Toggle login / register mode
+    function updatePasswordStep() {
+        if (isRegisterMode) {
+            modeLabel.textContent    = "Create your account";
+            submitLabel.textContent  = "Create Account";
+            nameInput.classList.remove("hidden");
+            confirmGroup.classList.remove("hidden");
+            btnToggleMode.querySelector("a") && (btnToggleMode.querySelector("a").textContent = "Log in instead");
+        } else {
+            modeLabel.textContent    = "Enter your password";
+            submitLabel.textContent  = "Log in";
+            nameInput.classList.add("hidden");
+            confirmGroup.classList.add("hidden");
+            btnToggleMode.querySelector("a") && (btnToggleMode.querySelector("a").textContent = "Create one");
+        }
+        hideError();
+    }
+
+    btnToggleMode && btnToggleMode.addEventListener("click", e => {
+        e.preventDefault();
+        isRegisterMode = !isRegisterMode;
+        updatePasswordStep();
+        passwordInput.value = "";
+        confirmInput.value  = "";
+        passwordInput.focus();
+    });
+
+    // Show/hide password
+    btnTogglePwd && btnTogglePwd.addEventListener("click", () => {
+        const isHidden = passwordInput.type === "password";
+        passwordInput.type = isHidden ? "text" : "password";
+        eyeIcon.className  = isHidden ? "fa-regular fa-eye-slash" : "fa-regular fa-eye";
+    });
+
+    // Submit login or register
+    btnSubmit && btnSubmit.addEventListener("click", handleSubmit);
+    passwordInput && passwordInput.addEventListener("keydown", e => {
+        if (e.key === "Enter") handleSubmit();
+    });
+    confirmInput && confirmInput.addEventListener("keydown", e => {
+        if (e.key === "Enter") handleSubmit();
+    });
+
+    async function handleSubmit() {
+        hideError();
+        const email    = emailInput.value.trim();
+        const password = passwordInput.value;
+        const name     = nameInput.value.trim();
+        const confirm  = confirmInput.value;
+
+        if (!password) { showError("Please enter your password."); return; }
+        if (isRegisterMode) {
+            if (password.length < 6) { showError("Password must be at least 6 characters."); return; }
+            if (password !== confirm)  { showError("Passwords do not match."); return; }
+        }
+
+        setLoading(true);
+        try {
+            const endpoint = isRegisterMode ? "/api/auth/register" : "/api/auth/login";
+            const body     = isRegisterMode
+                ? { email, password, name }
+                : { email, password };
+
+            const res  = await fetch(endpoint, {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify(body),
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                showError(data.detail || "Authentication failed.");
+                return;
+            }
+
+            saveAuth(data.token, data.user);
+            showApp(data.user);
+        } catch (err) {
+            showError("Network error — please try again.");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    // Google Sign-In
+    btnGoogleLogin && btnGoogleLogin.addEventListener("click", async () => {
+        // Check if Google is configured on server
+        try {
+            const res  = await fetch("/api/auth/google-client-id");
+            const data = await res.json();
+            if (!data.configured || !data.client_id) {
+                showError("Google Sign-In is not configured on this server. Please use email/password login.");
+                // scroll to email
+                emailInput.focus();
+                return;
+            }
+            // Trigger Google One Tap / Sign-in popup
+            // This requires the GSI library loaded — for now we show the email step
+            // If Google GSI is loaded, use it
+            if (window.google && window.google.accounts) {
+                window.google.accounts.id.initialize({
+                    client_id: data.client_id,
+                    callback:  handleGoogleResponse,
+                });
+                window.google.accounts.id.prompt();
+            } else {
+                showError("Google Sign-In requires HTTPS and the Google Identity Services library. Use email/password instead.");
+            }
+        } catch {
+            showError("Could not reach server. Please try again.");
+        }
+    });
+
+    async function handleGoogleResponse(response) {
+        setLoading(true);
+        try {
+            const res  = await fetch("/api/auth/google", {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify({ credential: response.credential }),
+            });
+            const data = await res.json();
+            if (!res.ok) { showError(data.detail || "Google login failed."); return; }
+            saveAuth(data.token, data.user);
+            showApp(data.user);
+        } catch {
+            showError("Google authentication failed.");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    // Check session on page load
+    checkExistingSession();
+
+})();
+
+// User profile pill management (called after login)
+function updateUserPill(user) {
+    const nameLabel    = document.getElementById("user-name-label");
+    const avatarEl     = document.getElementById("user-avatar");
+    const dropdownName = document.getElementById("dropdown-name");
+    const dropdownEmail= document.getElementById("dropdown-email");
+
+    if (!user) return;
+
+    const displayName = user.name || user.email.split("@")[0];
+    if (nameLabel)     nameLabel.textContent  = displayName;
+    if (dropdownName)  dropdownName.textContent  = displayName;
+    if (dropdownEmail) dropdownEmail.textContent = user.email;
+
+    if (avatarEl) {
+        if (user.avatar_url) {
+            avatarEl.innerHTML = `<img src="${user.avatar_url}" alt="${displayName}" onerror="this.parentElement.innerHTML='<i class=\'fa-solid fa-user\'></i>'">`;
+        } else {
+            // Use first letter as avatar
+            const initials = displayName.charAt(0).toUpperCase();
+            avatarEl.innerHTML = `<span style="font-size:14px;font-weight:700;">${initials}</span>`;
+        }
+    }
+}
+
+// Logout handler (wired inside DOMContentLoaded)
+async function performLogout() {
+    const token = getToken();
+    if (token) {
+        try {
+            await apiFetch("/api/auth/logout", {
+                method: "POST",
+            });
+        } catch (_) {}
+    }
+    clearAuth();
+    location.reload();
+}
+
+// =============================================================================
+// BOOT DASHBOARD — called after successful auth
+// =============================================================================
+
+function bootDashboard() {
+
+    const init = () => {
     // Current state variables
     let activeDate = null;
     let syncInterval = null;
@@ -95,7 +403,7 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadOgImage(url, thumbEl) {
         try {
             thumbEl.classList.add("thumb-loading");
-            const res  = await fetch(`/api/og-image?url=${encodeURIComponent(url)}`);
+            const res  = await apiFetch(`/api/og-image?url=${encodeURIComponent(url)}`);
             const data = await res.json();
             thumbEl.classList.remove("thumb-loading");
             if (data.image_url) {
@@ -103,6 +411,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 thumbEl.style.backgroundSize  = "cover";
                 thumbEl.style.backgroundPosition = "center";
                 thumbEl.classList.add("has-og-image");
+            }
+            if (data.title) {
+                const card = thumbEl.closest(".news-card, .research-card, .market-card");
+                if (card) {
+                    const headlineEl = card.querySelector(".news-headline, .research-title, .market-headline");
+                    if (headlineEl) {
+                        headlineEl.textContent = data.title;
+                    }
+                }
             }
         } catch (e) {
             thumbEl.classList.remove("thumb-loading");
@@ -145,7 +462,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Load available dates in sidebar
     async function loadDigestHistory(selectLatest = true) {
         try {
-            const response = await fetch("/api/digests");
+            const response = await apiFetch("/api/digests");
             if (!response.ok) throw new Error("Failed to load digest history.");
             const data = await response.json();
             
@@ -194,7 +511,7 @@ document.addEventListener("DOMContentLoaded", () => {
             activeDate = date;
             digestDateLabel.textContent = `Daily AI Digest — Loading...`;
             
-            const response = await fetch(`/api/digests/${date}`);
+            const response = await apiFetch(`/api/digests/${date}`);
             if (!response.ok) throw new Error(`Failed to load digest for date: ${date}`);
             const data = await response.json();
             
@@ -491,7 +808,7 @@ document.addEventListener("DOMContentLoaded", () => {
             hudProgressBar.style.width = "5%";
             hudStepText.textContent = "Connecting to crawler engine...";
             
-            const response = await fetch("/api/trigger", { method: "POST" });
+            const response = await apiFetch("/api/trigger", { method: "POST" });
             if (!response.ok) {
                 const err = await response.json();
                 throw new Error(err.detail || "API trigger failed.");
@@ -510,7 +827,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function pollSyncStatus() {
         try {
-            const response = await fetch("/api/status");
+            const response = await apiFetch("/api/status");
             if (!response.ok) throw new Error("Sync status query failed.");
             const data = await response.json();
             
@@ -578,7 +895,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function loadSettings() {
         try {
-            const response = await fetch("/api/settings");
+            const response = await apiFetch("/api/settings");
             if (!response.ok) throw new Error("Failed to load settings.");
             const data = await response.json();
             
@@ -610,7 +927,7 @@ document.addEventListener("DOMContentLoaded", () => {
             keyStatusText.textContent = "Saving credentials...";
             keyStatusText.style.color = "var(--accent-cyan)";
             
-            const response = await fetch("/api/settings", {
+            const response = await apiFetch("/api/settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ gemini_api_key: apiKey })
@@ -667,6 +984,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let searchDebounce      = null;
     let activeSourceFilter  = "";
     let cachedSources       = [];
+    let cachedFeeds         = [];
 
     // Known source → domain mapping for favicons in filter pills
     const SOURCE_DOMAIN_MAP = {
@@ -683,7 +1001,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function faviconForSource(source) {
         const domain = SOURCE_DOMAIN_MAP[source];
-        return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : null;
+        if (domain) return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+
+        // Check dynamic feeds loaded from database
+        const feed = cachedFeeds.find(f => f.name === source);
+        if (feed && feed.url) {
+            return faviconFor(feed.url);
+        }
+        return null;
     }
 
     function highlightMatch(text, query) {
@@ -712,7 +1037,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function fetchSources() {
         try {
-            const res  = await fetch("/api/search");
+            const res  = await apiFetch("/api/search");
             const data = await res.json();
             cachedSources = data.sources || [];
             renderSourcePills();
@@ -757,7 +1082,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (q)                  params.set("q",      q);
             if (activeSourceFilter) params.set("source", activeSourceFilter);
 
-            const res  = await fetch(`/api/search?${params}`);
+            const res  = await apiFetch(`/api/search?${params}`);
             const data = await res.json();
 
             if (data.results.length === 0) {
@@ -850,6 +1175,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (target === "sources") {
                 loadScraperConfig();
             }
+            if (target === "news-feeds") {
+                loadDynamicFeeds();
+            }
         });
     });
 
@@ -873,7 +1201,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function loadEmailSettings() {
         try {
-            const res  = await fetch("/api/settings/email");
+            const res  = await apiFetch("/api/settings/email");
             if (!res.ok) throw new Error("Failed to load email settings.");
             const data = await res.json();
 
@@ -916,7 +1244,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 from_name:     smtpFromNameInput.value.trim() || "Daily AI Digest",
                 enabled:       emailEnabledToggle.checked,
             };
-            const res = await fetch("/api/settings/email", {
+            const res = await apiFetch("/api/settings/email", {
                 method:  "POST",
                 headers: { "Content-Type": "application/json" },
                 body:    JSON.stringify(payload),
@@ -943,7 +1271,7 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadSubscribers() {
         subscriberList.innerHTML = '<li class="subscriber-empty">Loading...</li>';
         try {
-            const res  = await fetch("/api/subscribers");
+            const res  = await apiFetch("/api/subscribers");
             if (!res.ok) throw new Error("Failed to load subscribers.");
             const data = await res.json();
 
@@ -985,7 +1313,7 @@ document.addEventListener("DOMContentLoaded", () => {
         subStatusText.textContent = "Adding...";
         subStatusText.style.color = "var(--accent-cyan)";
         try {
-            const res = await fetch("/api/subscribers", {
+            const res = await apiFetch("/api/subscribers", {
                 method:  "POST",
                 headers: { "Content-Type": "application/json" },
                 body:    JSON.stringify({ email, name }),
@@ -1005,7 +1333,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function removeSubscriber(email) {
         try {
-            const res = await fetch(`/api/subscribers/${encodeURIComponent(email)}`, { method: "DELETE" });
+            const res = await apiFetch(`/api/subscribers/${encodeURIComponent(email)}`, { method: "DELETE" });
             if (!res.ok) {
                 const data = await res.json();
                 throw new Error(data.detail || "Remove failed.");
@@ -1037,7 +1365,7 @@ document.addEventListener("DOMContentLoaded", () => {
         testStatusText.textContent = "Sending test email…";
         testStatusText.style.color = "var(--accent-cyan)";
         try {
-            const res = await fetch("/api/email/test", {
+            const res = await apiFetch("/api/email/test", {
                 method:  "POST",
                 headers: { "Content-Type": "application/json" },
                 body:    JSON.stringify({ to }),
@@ -1076,10 +1404,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!scraperSourceList) return;
         scraperSourceList.innerHTML = '<p class="settings-explanation">Loading sources...</p>';
         try {
-            const res = await fetch("/api/settings/scraper");
+            const res = await apiFetch("/api/settings/scraper");
             if (!res.ok) throw new Error("Failed to load scraper settings.");
             scraperConfig = await res.json();
             renderScraperSources();
+            renderCustomSources();
         } catch (err) {
             scraperSourceList.innerHTML = `<p class="settings-explanation" style="color:var(--accent-red);">Error: ${err.message}</p>`;
         }
@@ -1211,10 +1540,13 @@ document.addEventListener("DOMContentLoaded", () => {
             newConfig[src.key] = entry;
         });
 
+        // Add custom RSS feeds
+        newConfig.custom_rss = getCustomSourcesFromUI();
+
         if (scraperStatusText) { scraperStatusText.textContent = "Saving…"; scraperStatusText.style.color = "var(--accent-cyan)"; }
 
         try {
-            const res = await fetch("/api/settings/scraper", {
+            const res = await apiFetch("/api/settings/scraper", {
                 method:  "POST",
                 headers: { "Content-Type": "application/json" },
                 body:    JSON.stringify({ config: newConfig }),
@@ -1227,7 +1559,197 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    btnSaveScraper && btnSaveScraper.addEventListener("click", saveScraperConfig);
+    // --- DYNAMIC DATABASE FEEDS MANAGEMENT (BLOGS & RSS) ---
+    const dynamicFeedsList  = document.getElementById("dynamic-feeds-list");
+    const feedNameInput     = document.getElementById("feed-name-input");
+    const feedUrlInput      = document.getElementById("feed-url-input");
+    const feedTypeSelect    = document.getElementById("feed-type-select");
+    const btnSaveFeed       = document.getElementById("btn-save-feed");
+    const btnCancelEditFeed = document.getElementById("btn-cancel-edit-feed");
+    const feedEditIdInput   = document.getElementById("feed-edit-id");
+    const feedStatusText    = document.getElementById("feed-status-text");
+    const btnCloseFeeds     = document.getElementById("btn-close-feeds");
+
+    async function loadDynamicFeeds() {
+        if (!dynamicFeedsList) return;
+        dynamicFeedsList.innerHTML = '<p class="settings-explanation" style="text-align:center;padding:12px;">Loading feeds...</p>';
+        try {
+            const res = await apiFetch("/api/sources");
+            if (!res.ok) throw new Error("Failed to load sources list.");
+            const data = await res.json();
+            cachedFeeds = data; // Cache for favicons
+            renderDynamicFeeds();
+        } catch (err) {
+            dynamicFeedsList.innerHTML = `<p class="settings-explanation" style="color:var(--accent-red);text-align:center;padding:12px;">Error: ${err.message}</p>`;
+        }
+    }
+
+    function renderDynamicFeeds() {
+        if (!dynamicFeedsList) return;
+        dynamicFeedsList.innerHTML = "";
+        
+        if (cachedFeeds.length === 0) {
+            dynamicFeedsList.innerHTML = `<p class="settings-explanation" style="color:var(--color-text-muted);text-align:center;padding:12px;border: 1px dashed rgba(255,255,255,0.08);border-radius:6px;margin:0;">No feeds added yet.</p>`;
+            return;
+        }
+
+        cachedFeeds.forEach(feed => {
+            const row = document.createElement("div");
+            row.className = "scraper-source-row";
+            row.dataset.id = feed.id;
+            row.style.padding = "10px 0";
+            
+            row.innerHTML = `
+                <div class="scraper-source-header" style="display: flex; align-items: center; width: 100%;">
+                    <div class="scraper-source-icon" style="color: var(--accent-cyan); margin-right:12px;">
+                        <i class="fa-solid ${feed.source_type === 'rss' ? 'fa-square-rss' : 'fa-code'}"></i>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;">
+                        <span class="scraper-source-name" style="font-weight:600;font-size:14px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${feed.name}</span>
+                        <span class="settings-explanation" style="font-size:11px;color:var(--color-text-muted);word-break:break-all;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${feed.url}">${feed.url}</span>
+                    </div>
+                    <span class="badge" style="font-size: 9px; padding: 2px 6px; margin-left: 12px; text-transform: uppercase; background: rgba(0, 240, 255, 0.05); color: var(--accent-cyan); border: 1px solid rgba(0,240,255,0.15); font-weight:600; flex-shrink:0;">${feed.source_type}</span>
+                    
+                    <div style="margin-left: auto; display: flex; align-items: center; gap: 12px; flex-shrink:0;">
+                        <label class="toggle-switch-label" style="padding: 0; margin: 0; display:flex; align-items:center;">
+                            <input type="checkbox" class="scraper-toggle feed-toggle" ${feed.enabled ? "checked" : ""}>
+                            <span class="toggle-switch-track"><span class="toggle-switch-knob"></span></span>
+                        </label>
+                        
+                        <button type="button" class="btn-edit-feed" style="background:none; border:none; color:var(--accent-cyan); cursor:pointer; font-size:13px; padding:4px;" title="Edit Feed">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        
+                        <button type="button" class="btn-remove-feed" style="background:none; border:none; color:var(--accent-red); cursor:pointer; font-size:13px; padding:4px;" title="Delete Feed">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Toggle binding
+            row.querySelector(".feed-toggle").addEventListener("change", () => {
+                toggleFeed(feed.id);
+            });
+            
+            // Edit binding
+            row.querySelector(".btn-edit-feed").addEventListener("click", () => {
+                startEditFeed(feed);
+            });
+            
+            // Delete binding
+            row.querySelector(".btn-remove-feed").addEventListener("click", () => {
+                if (confirm(`Are you sure you want to delete the feed "${feed.name}"?`)) {
+                    deleteFeed(feed.id);
+                }
+            });
+            
+            dynamicFeedsList.appendChild(row);
+        });
+    }
+
+    async function toggleFeed(id) {
+        try {
+            const res = await apiFetch(`/api/sources/${id}/toggle`, { method: "POST" });
+            if (!res.ok) throw new Error("Toggle request failed.");
+            await loadDynamicFeeds();
+        } catch (err) {
+            alert(`Failed to toggle feed: ${err.message}`);
+        }
+    }
+
+    function startEditFeed(feed) {
+        feedEditIdInput.value = feed.id;
+        feedNameInput.value = feed.name;
+        feedUrlInput.value = feed.url;
+        feedTypeSelect.value = feed.source_type;
+        
+        btnSaveFeed.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save';
+        btnCancelEditFeed.classList.remove("hidden");
+        
+        if (feedStatusText) {
+            feedStatusText.textContent = `Editing source "${feed.name}"`;
+            feedStatusText.style.color = "var(--accent-cyan)";
+        }
+    }
+
+    function resetFeedForm() {
+        feedEditIdInput.value = "";
+        feedNameInput.value = "";
+        feedUrlInput.value = "";
+        feedTypeSelect.value = "rss";
+        
+        btnSaveFeed.innerHTML = '<i class="fa-solid fa-plus"></i> Add Source';
+        btnCancelEditFeed.classList.add("hidden");
+        
+        if (feedStatusText) {
+            feedStatusText.textContent = "";
+        }
+    }
+
+    async function saveFeed() {
+        const name = feedNameInput.value.trim();
+        const url = feedUrlInput.value.trim();
+        const source_type = feedTypeSelect.value;
+        const editId = feedEditIdInput.value;
+        
+        if (!name || !url) {
+            feedStatusText.textContent = "Please enter Name and URL.";
+            feedStatusText.style.color = "var(--accent-red)";
+            return;
+        }
+
+        feedStatusText.textContent = editId ? "Validating & saving changes..." : "Validating & adding source...";
+        feedStatusText.style.color = "var(--accent-cyan)";
+        
+        try {
+            const endpoint = editId ? `/api/sources/${editId}` : "/api/sources";
+            const method = editId ? "PUT" : "POST";
+            
+            const res = await apiFetch(endpoint, {
+                method: method,
+                body: JSON.stringify({ name, url, source_type, enabled: true })
+            });
+            
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.detail || "Request failed.");
+            }
+            
+            feedStatusText.textContent = editId ? `✓ Updated source "${name}" successfully.` : `✓ Added source "${name}" successfully.`;
+            feedStatusText.style.color = "var(--accent-green)";
+            
+            resetFeedForm();
+            await loadDynamicFeeds();
+        } catch (err) {
+            feedStatusText.textContent = `Error: ${err.message}`;
+            feedStatusText.style.color = "var(--accent-red)";
+        }
+    }
+
+    async function deleteFeed(id) {
+        try {
+            const res = await apiFetch(`/api/sources/${id}`, { method: "DELETE" });
+            if (!res.ok) throw new Error("Delete request failed.");
+            resetFeedForm();
+            await loadDynamicFeeds();
+        } catch (err) {
+            alert(`Failed to delete source: ${err.message}`);
+        }
+    }
+
+    btnSaveFeed && btnSaveFeed.addEventListener("click", saveFeed);
+    btnCancelEditFeed && btnCancelEditFeed.addEventListener("click", resetFeedForm);
+    btnCloseFeeds && btnCloseFeeds.addEventListener("click", () => settingsModalOverlay.classList.add("hidden"));
+
+    async function fetchDynamicFeedsSilently() {
+        try {
+            const res = await apiFetch("/api/sources");
+            if (res.ok) {
+                cachedFeeds = await res.json();
+            }
+        } catch (_) {}
+    }
 
     // Reset tab to AI Model whenever the settings modal reopens
     const originalSettingsToggleHandler = () => {
@@ -1241,16 +1763,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- RUN INITIALIZERS ON STARTUP ---
     loadDigestHistory(true);
-    
+    fetchDynamicFeedsSilently();
+
     // Check initial status in case background scheduler is running
-    fetch("/api/status")
-        .then(res => res.json())
+    apiFetch("/api/status")
+        .then(res => res.ok ? res.json() : null)
         .then(data => {
+            if (!data) return;
             setStatusIndicator(data.status);
             if (data.status === "fetching" || data.status === "analyzing") {
-                // If it was already active on load, pop open HUD and continue polling!
                 syncHudOverlay.classList.remove("hidden");
                 syncInterval = setInterval(pollSyncStatus, 800);
             }
         });
-});
+
+    // Wire logout button
+    const btnLogout = document.getElementById("btn-logout");
+    btnLogout && btnLogout.addEventListener("click", performLogout);
+
+    // Restore user pill from cache
+    const cachedUser = getUser();
+    if (cachedUser) updateUserPill(cachedUser);
+
+    }; // end init()
+
+    if (document.readyState !== "loading") {
+        init();
+    } else {
+        document.addEventListener("DOMContentLoaded", init);
+    }
+} // end bootDashboard()
