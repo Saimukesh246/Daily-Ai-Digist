@@ -1,0 +1,31 @@
+# Secrets — never bake into the image
+.env
+.env.*
+
+# Database — persisted via volume mount, not in image
+*.db
+*.db-shm
+*.db-wal
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Git
+.git/
+.gitignore
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code internal
+.claude/

@@ -6,13 +6,24 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      # SQLite database is persisted here across container restarts
       - ai-digest-data:/app/data
     env_file:
+      # All secrets (GEMINI_API_KEY, GOOGLE_CLIENT_ID, APP_URL …) come from .env
       - .env
     environment:
+      # These override anything in .env for container-specific values
       - HOST=0.0.0.0
       - PORT=8000
-    restart: always
+      - DATA_DIR=/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
 volumes:
   ai-digest-data:
+    driver: local
