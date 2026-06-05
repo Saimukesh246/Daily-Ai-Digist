@@ -11,6 +11,7 @@ COPY . .
 
 # SQLite data directory — mount a Railway Volume here for persistence
 ENV DATA_DIR=/app/data
+ENV HOST=0.0.0.0
 RUN mkdir -p /app/data
 
 EXPOSE 8000
