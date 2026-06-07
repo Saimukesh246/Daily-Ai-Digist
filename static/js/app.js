@@ -261,6 +261,84 @@ async function apiFetch(url, options = {}) {
         }
     }
 
+    // ── SVG path animation (anime.js) ────────────────────────────────────────
+    // Snake path underlines the currently focused auth field.
+    // Path geometry (viewBox 0 0 368 240):
+    //   Step 1: bottom of email pill (y=148) → right curve → return (y=180) → left curve → bottom of continue (y=212)
+    //   Step 2: bottom of password pill (y=156) → right curve → return (y=188) → left curve → bottom of submit (y=220)
+    // Offsets:  first field = 0,  second field = -(email_line + curve + return + curve) ≈ -796
+
+    (function initAuthPathAnim() {
+        if (typeof anime === "undefined") return;
+
+        const path1 = document.getElementById("auth-path-1");
+        const path2 = document.getElementById("auth-path-2");
+        let   cur   = null;
+
+        // Email + Continue line lengths: 348px each, curves ~50px each → offset to second line ≈ 796
+        const DASH    = "340 2000";   // visible segment length + big gap
+        const OFFSET1 = 0;            // first  field (email / password)
+        const OFFSET2 = -796;         // second field (continue / submit)
+
+        function run(path, offset) {
+            if (!path) return;
+            if (cur) cur.pause();
+            cur = anime({
+                targets: path,
+                strokeDashoffset: { value: offset,  duration: 700, easing: "easeOutQuart" },
+                strokeDasharray:  { value: DASH,    duration: 700, easing: "easeOutQuart" }
+            });
+        }
+
+        function hide(path) {
+            if (!path) return;
+            if (cur) cur.pause();
+            cur = anime({
+                targets: path,
+                strokeDasharray: { value: "0 2000", duration: 400, easing: "easeInQuart" }
+            });
+        }
+
+        // ── Step 1 bindings ───
+        const elEmail    = document.getElementById("auth-email-input");
+        const elContinue = document.getElementById("btn-auth-continue");
+
+        elEmail    && elEmail.addEventListener("focus", () => run(path1, OFFSET1));
+        elContinue && elContinue.addEventListener("focus", () => run(path1, OFFSET2));
+        elEmail    && elEmail.addEventListener("blur", () => {
+            // only hide if no auth-step-providers element has focus
+            setTimeout(() => {
+                if (!document.getElementById("auth-step-providers").contains(document.activeElement)) hide(path1);
+            }, 100);
+        });
+
+        // Hide step-1 path when moving to step 2
+        elContinue && elContinue.addEventListener("click", () => hide(path1));
+
+        // ── Step 2 bindings ───
+        const elPassword = document.getElementById("auth-password-input");
+        const elConfirm  = document.getElementById("auth-confirm-input");
+        const elName     = document.getElementById("auth-name-input");
+        const elSubmit   = document.getElementById("btn-auth-submit");
+        const elBack     = document.getElementById("btn-auth-back");
+
+        elPassword && elPassword.addEventListener("focus", () => run(path2, OFFSET1));
+        elConfirm  && elConfirm.addEventListener("focus",  () => run(path2, OFFSET2));
+        elName     && elName.addEventListener("focus",     () => run(path2, OFFSET1));
+        elSubmit   && elSubmit.addEventListener("focus",   () => run(path2, OFFSET2));
+        elSubmit   && elSubmit.addEventListener("mouseenter", () => run(path2, OFFSET2));
+
+        elPassword && elPassword.addEventListener("blur", () => {
+            setTimeout(() => {
+                if (!document.getElementById("auth-step-password").contains(document.activeElement)) hide(path2);
+            }, 100);
+        });
+
+        // Reset step-2 path when going back
+        elBack && elBack.addEventListener("click", () => hide(path2));
+    })();
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Check session on page load
     checkExistingSession();
 
