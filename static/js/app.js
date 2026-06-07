@@ -88,15 +88,7 @@ async function apiFetch(url, options = {}) {
         // Body class drives CSS admin-only visibility
         document.body.classList.toggle("is-admin", isAdmin);
 
-        // Sync button — admin only
-        const syncBtn = document.getElementById("btn-trigger-sync");
-        if (syncBtn) syncBtn.style.display = isAdmin ? "" : "none";
-
-        // Settings button — admin only
-        const settingsBtn = document.getElementById("btn-settings-toggle");
-        if (settingsBtn) settingsBtn.style.display = isAdmin ? "" : "none";
-
-        // Users tab in settings — admin only
+        // Users tab in settings — admin only (everything else visible to all)
         document.querySelectorAll(".admin-only-tab").forEach(el => {
             el.classList.toggle("visible", isAdmin);
         });
