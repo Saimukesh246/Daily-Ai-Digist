@@ -1625,6 +1625,130 @@ body {
 }
 
 /* ==========================================================================
+   Bookmarks — Reading List sidebar + bookmark buttons on cards
+   ========================================================================== */
+
+/* Count badge next to "Reading List" heading */
+.bookmark-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: rgba(181, 95, 230, 0.15);
+    border: 1px solid rgba(181, 95, 230, 0.3);
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent-purple);
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+/* Reading list in sidebar */
+.bookmark-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.bookmark-item {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    transition: var(--transition-smooth);
+    position: relative;
+}
+
+.bookmark-item:hover {
+    border-color: rgba(181, 95, 230, 0.25);
+    background: rgba(181, 95, 230, 0.04);
+}
+
+.bookmark-item-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    padding-right: 20px;
+    text-decoration: none;
+}
+
+.bookmark-item-title:hover {
+    color: var(--accent-purple);
+}
+
+.bookmark-item-source {
+    font-size: 10px;
+    color: var(--color-text-muted);
+}
+
+.btn-bookmark-remove {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: color 0.2s;
+    line-height: 1;
+}
+
+.btn-bookmark-remove:hover {
+    color: var(--accent-red);
+}
+
+/* Bookmark star button on cards */
+.btn-bookmark {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    background: rgba(6, 9, 19, 0.7);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    transition: all 0.2s ease;
+}
+
+.btn-bookmark:hover {
+    border-color: rgba(181, 95, 230, 0.5);
+    color: var(--accent-purple);
+    background: rgba(181, 95, 230, 0.12);
+}
+
+.btn-bookmark.bookmarked {
+    border-color: rgba(181, 95, 230, 0.6);
+    color: var(--accent-purple);
+    background: rgba(181, 95, 230, 0.15);
+}
+
+/* ==========================================================================
    Role-based UI — User Management
    ========================================================================== */
 

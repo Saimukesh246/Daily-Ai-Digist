@@ -98,6 +98,22 @@ def init_db(db_path=DEFAULT_DB_PATH):
     )
     """)
 
+    # Table for user article bookmarks
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS bookmarks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        source TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        digest_date TEXT DEFAULT '',
+        bookmarked_at TEXT NOT NULL,
+        UNIQUE(user_id, url),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """)
+
     # Live migration: add role column to users if not already there
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'viewer'")
@@ -626,6 +642,92 @@ def get_all_users(db_path):
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+# ── Bookmark helpers ────────────────────────────────────────────────────────
+
+def get_bookmarks(db_path, user_id):
+    """Returns all bookmarks for a user, newest first."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, url, title, source, description, digest_date, bookmarked_at
+        FROM bookmarks WHERE user_id = ? ORDER BY bookmarked_at DESC
+    """, (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def add_bookmark(db_path, user_id, url, title, source="", description="", digest_date=""):
+    """Adds a bookmark. Returns True if added, False if already bookmarked."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    bookmarked_at = datetime.utcnow().isoformat()
+    try:
+        cursor.execute("""
+            INSERT INTO bookmarks (user_id, url, title, source, description, digest_date, bookmarked_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, url.strip(), title.strip(), source.strip(), description.strip(), digest_date.strip(), bookmarked_at))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+
+def remove_bookmark(db_path, user_id, url):
+    """Removes a bookmark. Returns True if removed."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM bookmarks WHERE user_id = ? AND url = ?", (user_id, url.strip()))
+    removed = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return removed
+
+
+def is_bookmarked(db_path, user_id, url):
+    """Returns True if the URL is already bookmarked by the user."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM bookmarks WHERE user_id = ? AND url = ?", (user_id, url.strip()))
+    result = cursor.fetchone() is not None
+    conn.close()
+    return result
+
+
+def get_bookmark_urls(db_path, user_id):
+    """Returns a set of bookmarked URLs for fast lookup."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT url FROM bookmarks WHERE user_id = ?", (user_id,))
+    urls = {row["url"] for row in cursor.fetchall()}
+    conn.close()
+    return urls
+
+
+# ── Weekly digest helpers ────────────────────────────────────────────────────
+
+def get_digests_for_range(db_path, start_date_str, end_date_str):
+    """Returns all digests between start_date and end_date inclusive, ordered by date DESC."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT date, content FROM digests
+        WHERE date >= ? AND date <= ?
+        ORDER BY date DESC
+    """, (start_date_str, end_date_str))
+    rows = cursor.fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        try:
+            result.append({"date": row["date"], "content": json.loads(row["content"])})
+        except Exception:
+            pass
+    return result
 
 
 def update_user_role(db_path, user_id, role):

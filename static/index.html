@@ -12,7 +12,7 @@
     <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom Style System -->
-    <link rel="stylesheet" href="/static/css/styles.css?v=6">
+    <link rel="stylesheet" href="/static/css/styles.css?v=10">
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- Anime.js for login path animations -->
@@ -190,6 +190,14 @@
                 <h3><i class="fa-regular fa-calendar-days"></i> Past Digests</h3>
                 <ul class="digest-history-list" id="digest-history-list">
                     <li class="loading-placeholder">Loading history...</li>
+                </ul>
+            </div>
+
+            <!-- Reading List -->
+            <div class="sidebar-menu" id="reading-list-section">
+                <h3><i class="fa-regular fa-bookmark"></i> Reading List <span class="bookmark-count" id="bookmark-count"></span></h3>
+                <ul class="bookmark-list" id="bookmark-list">
+                    <li class="loading-placeholder">No saved articles yet.</li>
                 </ul>
             </div>
 
@@ -482,8 +490,24 @@
                         </ul>
                     </div>
 
+                    <!-- Weekly Digest -->
                     <div class="email-section">
-                        <h4 class="email-section-title"><i class="fa-solid fa-paper-plane"></i> Test Delivery</h4>
+                        <h4 class="email-section-title"><i class="fa-regular fa-calendar-week"></i> Weekly Digest</h4>
+                        <p class="settings-explanation">Send a "Week in AI" roundup email every Sunday with the best stories, tools, and research from the past 7 days.</p>
+                        <label class="toggle-switch-label">
+                            <input type="checkbox" id="weekly-email-toggle">
+                            <span class="toggle-switch-track"><span class="toggle-switch-knob"></span></span>
+                            <span id="weekly-email-label">Send weekly roundup every Sunday</span>
+                        </label>
+                        <div class="subscriber-add-row" style="margin-top:8px;">
+                            <input type="email" id="weekly-test-email-input" placeholder="Send weekly test to..." class="sub-email-field" style="flex:1;">
+                            <button class="btn btn-secondary" id="btn-send-weekly-test" style="width:auto;white-space:nowrap;"><i class="fa-solid fa-paper-plane"></i> Test Weekly</button>
+                        </div>
+                        <span class="key-status-text" id="weekly-status-text"></span>
+                    </div>
+
+                    <div class="email-section">
+                        <h4 class="email-section-title"><i class="fa-solid fa-paper-plane"></i> Test Daily Delivery</h4>
                         <div class="subscriber-add-row">
                             <input type="email" id="test-email-input" placeholder="Send test to this address..." class="sub-email-field" style="flex:1;">
                             <button class="btn btn-secondary" id="btn-send-test" style="width:auto;white-space:nowrap;"><i class="fa-solid fa-paper-plane"></i> Send Test</button>
@@ -591,6 +615,6 @@
     </div>
 
     <!-- Dynamic JavaScript Engine -->
-    <script src="/static/js/app.js?v=9"></script>
+    <script src="/static/js/app.js?v=10"></script>
 </body>
 </html>

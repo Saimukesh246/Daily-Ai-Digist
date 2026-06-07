@@ -644,8 +644,13 @@ function bootDashboard() {
                    </ul>`
                 : "";
 
+            const alreadySaved = window._isBookmarked && window._isBookmarked(news.link);
             card.innerHTML = `
-                <div class="news-card-thumb ${gradClass}">
+                <div class="news-card-thumb ${gradClass}" style="position:relative;">
+                    <button class="btn-bookmark ${alreadySaved ? "bookmarked" : ""}" data-url="${news.link}"
+                        title="${alreadySaved ? "Remove bookmark" : "Save to Reading List"}">
+                        <i class="fa-${alreadySaved ? "solid" : "regular"} fa-bookmark"></i>
+                    </button>
                     <i class="fa-regular fa-newspaper news-thumb-icon"></i>
                     <div class="news-thumb-source">
                         ${faviconImg}
@@ -673,6 +678,16 @@ function bootDashboard() {
                     </div>
                 </div>
             `;
+
+            // Wire bookmark button
+            const bmBtn = card.querySelector(".btn-bookmark");
+            bmBtn && bmBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                window._toggleBookmark && window._toggleBookmark({
+                    url: news.link, title: news.headline,
+                    source: news.who_should_care || "", digest_date: activeDate || ""
+                });
+            });
 
             newsGridContainer.appendChild(card);
             if (news.link) loadOgImage(news.link, card.querySelector(".news-card-thumb"));
@@ -1269,6 +1284,7 @@ function bootDashboard() {
             if (target === "email") {
                 loadEmailSettings();
                 loadSubscribers();
+                loadWeeklyEmailSettings();
             }
             if (target === "sources") {
                 loadScraperConfig();
@@ -1482,6 +1498,74 @@ function bootDashboard() {
     }
 
     btnSendTest && btnSendTest.addEventListener("click", sendTestEmail);
+
+    // --- WEEKLY EMAIL SETTINGS ---
+
+    const weeklyEmailToggle   = document.getElementById("weekly-email-toggle");
+    const weeklyEmailLabel    = document.getElementById("weekly-email-label");
+    const weeklyStatusText    = document.getElementById("weekly-status-text");
+    const weeklyTestInput     = document.getElementById("weekly-test-email-input");
+    const btnSendWeeklyTest   = document.getElementById("btn-send-weekly-test");
+
+    async function loadWeeklyEmailSettings() {
+        try {
+            const res  = await apiFetch("/api/settings/weekly-email");
+            if (!res.ok) return;
+            const data = await res.json();
+            if (weeklyEmailToggle) weeklyEmailToggle.checked = data.enabled;
+            if (weeklyEmailLabel)  weeklyEmailLabel.textContent = data.enabled
+                ? "Weekly roundup enabled (sends every Sunday)"
+                : "Weekly roundup disabled";
+            if (weeklyStatusText && data.last_sent) {
+                weeklyStatusText.textContent = `Last sent: ${data.last_sent}`;
+                weeklyStatusText.style.color = "var(--color-text-muted)";
+            }
+        } catch (e) { /* silent */ }
+    }
+
+    weeklyEmailToggle && weeklyEmailToggle.addEventListener("change", async () => {
+        const enabled = weeklyEmailToggle.checked;
+        if (weeklyEmailLabel) weeklyEmailLabel.textContent = enabled
+            ? "Weekly roundup enabled (sends every Sunday)"
+            : "Weekly roundup disabled";
+        try {
+            await apiFetch("/api/settings/weekly-email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled })
+            });
+            if (weeklyStatusText) {
+                weeklyStatusText.textContent = enabled ? "✓ Weekly email enabled." : "✓ Weekly email disabled.";
+                weeklyStatusText.style.color = "var(--accent-green)";
+            }
+        } catch (e) {
+            if (weeklyStatusText) { weeklyStatusText.textContent = "Save failed."; weeklyStatusText.style.color = "var(--accent-red)"; }
+        }
+    });
+
+    async function sendWeeklyTest() {
+        const to = weeklyTestInput ? weeklyTestInput.value.trim() : "";
+        if (!to) return;
+        if (weeklyStatusText) { weeklyStatusText.textContent = "Sending weekly test…"; weeklyStatusText.style.color = "var(--accent-cyan)"; }
+        try {
+            const res  = await apiFetch("/api/email/weekly-test", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ to })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Send failed.");
+            if (weeklyStatusText) { weeklyStatusText.textContent = `✓ Weekly test sent to ${to}.`; weeklyStatusText.style.color = "var(--accent-green)"; }
+        } catch (err) {
+            if (weeklyStatusText) { weeklyStatusText.textContent = `Error: ${err.message}`; weeklyStatusText.style.color = "var(--accent-red)"; }
+        }
+    }
+
+    btnSendWeeklyTest && btnSendWeeklyTest.addEventListener("click", sendWeeklyTest);
+
+    // Load weekly settings whenever email tab is opened
+    // (hooked into the tab-switch handler already calling loadEmailSettings + loadSubscribers)
+    const _origEmailTabLoad = loadEmailSettings;
 
     // --- USER MANAGEMENT (admin only) ---
 
@@ -1941,8 +2025,88 @@ function bootDashboard() {
     };
     btnSettingsToggle.addEventListener("click", originalSettingsToggleHandler);
 
+    // --- BOOKMARKS ---
+
+    let bookmarkedUrls = new Set();   // fast lookup set
+
+    async function loadBookmarks() {
+        try {
+            const res = await apiFetch("/api/bookmarks");
+            if (!res.ok) return;
+            const data = await res.json();
+            bookmarkedUrls = new Set(data.bookmarks.map(b => b.url));
+            renderBookmarkList(data.bookmarks);
+            syncBookmarkButtons();
+        } catch (e) { /* silent */ }
+    }
+
+    function renderBookmarkList(bookmarks) {
+        const list  = document.getElementById("bookmark-list");
+        const count = document.getElementById("bookmark-count");
+        if (!list) return;
+        if (count) count.textContent = bookmarks.length > 0 ? bookmarks.length : "";
+
+        if (bookmarks.length === 0) {
+            list.innerHTML = '<li class="loading-placeholder">No saved articles yet.</li>';
+            return;
+        }
+        list.innerHTML = "";
+        bookmarks.forEach(b => {
+            const li = document.createElement("li");
+            li.className  = "bookmark-item";
+            li.dataset.url = b.url;
+            li.innerHTML  = `
+                <a href="${b.url}" target="_blank" rel="noopener" class="bookmark-item-title">${b.title}</a>
+                <span class="bookmark-item-source">${b.source || b.digest_date || ""}</span>
+                <button class="btn-bookmark-remove" title="Remove bookmark" data-url="${b.url}">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>`;
+            li.querySelector(".btn-bookmark-remove").addEventListener("click", async (e) => {
+                e.stopPropagation();
+                await toggleBookmark({ url: b.url, title: b.title, source: b.source });
+            });
+            list.appendChild(li);
+        });
+    }
+
+    function syncBookmarkButtons() {
+        document.querySelectorAll(".btn-bookmark[data-url]").forEach(btn => {
+            const isBookmarked = bookmarkedUrls.has(btn.dataset.url);
+            btn.classList.toggle("bookmarked", isBookmarked);
+            btn.innerHTML = isBookmarked
+                ? '<i class="fa-solid fa-bookmark"></i>'
+                : '<i class="fa-regular fa-bookmark"></i>';
+            btn.title = isBookmarked ? "Remove bookmark" : "Save to Reading List";
+        });
+    }
+
+    async function toggleBookmark(article) {
+        const { url, title, source = "", description = "", digest_date = "" } = article;
+        const isBookmarked = bookmarkedUrls.has(url);
+
+        try {
+            if (isBookmarked) {
+                const res = await apiFetch(`/api/bookmarks?url=${encodeURIComponent(url)}`, { method: "DELETE" });
+                if (res.ok) bookmarkedUrls.delete(url);
+            } else {
+                const res = await apiFetch("/api/bookmarks", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url, title, source, description, digest_date })
+                });
+                if (res.ok) bookmarkedUrls.add(url);
+            }
+            await loadBookmarks();
+        } catch (e) { console.error("Bookmark toggle failed:", e); }
+    }
+
+    // Make toggleBookmark accessible to card renderers (called from renderNews etc.)
+    window._toggleBookmark = toggleBookmark;
+    window._isBookmarked   = (url) => bookmarkedUrls.has(url);
+
     // --- RUN INITIALIZERS ON STARTUP ---
     loadDigestHistory(true);
+    loadBookmarks();
     fetchDynamicFeedsSilently();
 
     // Check initial status in case background scheduler is running

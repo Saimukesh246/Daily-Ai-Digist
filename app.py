@@ -34,6 +34,7 @@ import database
 import fetcher
 import analyzer
 import emailer
+import weekly_emailer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
@@ -674,6 +675,48 @@ async def update_scraper_settings(payload: ScraperSettingsPayload, _user: dict =
     return {"message": "Scraper settings saved."}
 
 
+@app.get("/api/settings/weekly-email")
+async def get_weekly_email_settings(_user: dict = Depends(require_auth)):
+    """Returns weekly email settings."""
+    return {
+        "enabled":    database.get_setting(DB_PATH, "weekly_email_enabled", "false").lower() == "true",
+        "last_sent":  database.get_setting(DB_PATH, "last_weekly_email_sent", ""),
+    }
+
+class WeeklyEmailPayload(BaseModel):
+    enabled: bool
+
+@app.post("/api/settings/weekly-email")
+async def update_weekly_email_settings(payload: WeeklyEmailPayload, _user: dict = Depends(require_admin)):
+    """Enables or disables Sunday weekly digest email."""
+    database.save_setting(DB_PATH, "weekly_email_enabled", str(payload.enabled).lower())
+    return {"message": "Weekly email setting saved."}
+
+@app.post("/api/email/weekly-test")
+async def send_weekly_test(payload: TestEmailPayload, _user: dict = Depends(require_admin)):
+    """Sends a test weekly digest email to the given address."""
+    import re
+    if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.to):
+        raise HTTPException(status_code=400, detail="Invalid email address.")
+    smtp_settings = get_smtp_settings()
+    if not smtp_settings["host"] or not smtp_settings["user"]:
+        raise HTTPException(status_code=400, detail="SMTP is not configured.")
+    today    = datetime.now()
+    start_dt = today - timedelta(days=6)
+    digests  = database.get_digests_for_range(DB_PATH, start_dt.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
+    if not digests:
+        raise HTTPException(status_code=404, detail="No digests available for the past 7 days.")
+    week_label = f"{start_dt.strftime('%b %d')} – {today.strftime('%b %d, %Y')}"
+    result = weekly_emailer.send_weekly_emails(
+        smtp_settings,
+        [{"email": payload.to.strip(), "name": "Test Recipient"}],
+        digests, week_label
+    )
+    if result["sent"] > 0:
+        return {"message": f"Weekly test email sent to {payload.to}.", "result": result}
+    raise HTTPException(status_code=500, detail=f"Send failed: {'; '.join(result['errors'])}")
+
+
 def validate_source_endpoint(url: str, source_type: str):
     import requests
     from bs4 import BeautifulSoup
@@ -818,6 +861,101 @@ async def send_test_email(payload: TestEmailPayload, _user: dict = Depends(requi
     raise HTTPException(status_code=500, detail=f"Send failed: {'; '.join(result['errors'])}")
 
 # ---------------------------------------------------------------------------
+# Bookmarks (per-user, auth required)
+# ---------------------------------------------------------------------------
+
+class BookmarkPayload(BaseModel):
+    url: str
+    title: str
+    source: str = ""
+    description: str = ""
+    digest_date: str = ""
+
+@app.get("/api/bookmarks")
+async def get_bookmarks(current_user: dict = Depends(require_auth)):
+    """Returns all bookmarks for the authenticated user."""
+    return {"bookmarks": database.get_bookmarks(DB_PATH, current_user["id"])}
+
+@app.post("/api/bookmarks")
+async def add_bookmark(payload: BookmarkPayload, current_user: dict = Depends(require_auth)):
+    """Bookmarks an article for the current user."""
+    if not payload.url.strip():
+        raise HTTPException(status_code=400, detail="URL is required.")
+    added = database.add_bookmark(
+        DB_PATH, current_user["id"],
+        payload.url, payload.title, payload.source,
+        payload.description, payload.digest_date
+    )
+    if not added:
+        raise HTTPException(status_code=409, detail="Already bookmarked.")
+    return {"message": "Bookmarked successfully."}
+
+@app.delete("/api/bookmarks")
+async def remove_bookmark(url: str, current_user: dict = Depends(require_auth)):
+    """Removes a bookmark by URL for the current user."""
+    removed = database.remove_bookmark(DB_PATH, current_user["id"], url)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Bookmark not found.")
+    return {"message": "Bookmark removed."}
+
+@app.get("/api/bookmarks/urls")
+async def get_bookmark_urls(current_user: dict = Depends(require_auth)):
+    """Returns a list of all bookmarked URLs for fast client-side lookup."""
+    return {"urls": list(database.get_bookmark_urls(DB_PATH, current_user["id"]))}
+
+
+# ---------------------------------------------------------------------------
+# Weekly digest email
+# ---------------------------------------------------------------------------
+
+def send_weekly_digest():
+    """Compiles the past 7 days of digests and emails them as a Week-in-AI roundup."""
+    try:
+        enabled = database.get_setting(DB_PATH, "weekly_email_enabled", "false").lower() == "true"
+        if not enabled:
+            return
+
+        subscribers = database.get_active_subscribers(DB_PATH)
+        if not subscribers:
+            logger.info("Weekly email: no active subscribers — skipping.")
+            return
+
+        smtp_settings = {
+            "host":      database.get_setting(DB_PATH, "smtp_host", ""),
+            "port":      int(database.get_setting(DB_PATH, "smtp_port", "587")),
+            "user":      database.get_setting(DB_PATH, "smtp_user", ""),
+            "password":  database.get_setting(DB_PATH, "smtp_password", ""),
+            "from_name": database.get_setting(DB_PATH, "smtp_from_name", "Daily AI Digest"),
+        }
+        if not smtp_settings["host"] or not smtp_settings["user"]:
+            logger.warning("Weekly email: SMTP not configured — skipping.")
+            return
+
+        today    = datetime.now()
+        end_dt   = today
+        start_dt = today - timedelta(days=6)
+        start_str = start_dt.strftime("%Y-%m-%d")
+        end_str   = end_dt.strftime("%Y-%m-%d")
+        digests   = database.get_digests_for_range(DB_PATH, start_str, end_str)
+
+        if not digests:
+            logger.info("Weekly email: no digests found for the past 7 days — skipping.")
+            return
+
+        week_label = f"{start_dt.strftime('%b %d')} – {end_dt.strftime('%b %d, %Y')}"
+        logger.info(f"Weekly email: sending to {len(subscribers)} subscriber(s) for {week_label}...")
+        result = weekly_emailer.send_weekly_emails(smtp_settings, subscribers, digests, week_label)
+        database.save_setting(DB_PATH, "last_weekly_email_sent", end_str)
+        logger.info(f"Weekly email: sent={result['sent']}, failed={result['failed']}.")
+        if result["errors"]:
+            for err in result["errors"]:
+                logger.error(f"Weekly email error: {err}")
+
+    except Exception as exc:
+        logger.error(f"send_weekly_digest failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # User management (admin only)
 # ---------------------------------------------------------------------------
 
@@ -895,9 +1033,16 @@ def start_hourly_scheduler():
                     run_sync_job(today_str)
 
                 if now.hour >= 7:
+                    # Daily digest email
                     last_sent = database.get_setting(DB_PATH, "last_email_sent_date", "")
                     if last_sent != today_str:
                         send_scheduled_emails(today_str)
+
+                    # Weekly digest email — every Sunday (weekday 6)
+                    if now.weekday() == 6:
+                        last_weekly = database.get_setting(DB_PATH, "last_weekly_email_sent", "")
+                        if last_weekly != today_str:
+                            send_weekly_digest()
 
                 # Clean up expired sessions periodically
                 database.delete_expired_sessions(DB_PATH)
