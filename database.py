@@ -146,16 +146,27 @@ def save_raw_article(db_path, date, source, title, description, url, category):
     return success
 
 def get_raw_articles_by_date(db_path, date):
-    """Retrieves all raw articles for a specific date."""
+    """Retrieves all raw articles for a specific date, newest first."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
     cursor.execute("""
-    SELECT * FROM raw_articles WHERE date = ? ORDER BY id DESC
+    SELECT * FROM raw_articles WHERE date = ? ORDER BY fetched_at DESC, id DESC
     """, (date,))
     rows = cursor.fetchall()
     articles = [dict(row) for row in rows]
     conn.close()
     return articles
+
+
+def clear_articles_for_date(db_path, date):
+    """Deletes all raw articles for a date so the next sync fetches fully fresh content."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM raw_articles WHERE date = ?", (date,))
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
 
 def get_raw_articles_since(db_path, base_date_str, days=7):
     """Retrieves all raw articles within a range prior to a base date."""

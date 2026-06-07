@@ -961,12 +961,18 @@ function bootDashboard() {
             if (data.status === "complete") {
                 clearInterval(syncInterval);
                 syncInterval = null;
-                hudStepText.textContent = "Compilation successful! Loading dashboard...";
-                
-                // Keep overlay visible briefly for satisfaction, then close
-                setTimeout(() => {
+                hudStepText.textContent = "Compilation successful! Loading latest digest...";
+
+                setTimeout(async () => {
                     syncHudOverlay.classList.add("hidden");
-                    loadDigestHistory(true); // reload list and select latest
+                    // Reload history list AND force-load the freshly compiled digest
+                    await loadDigestHistory(false);         // refresh sidebar list
+                    const today = new Date().toISOString().split("T")[0];
+                    await loadDigest(today);               // always show today's fresh content
+                    // Mark today active in sidebar
+                    document.querySelectorAll(".digest-history-item").forEach(li => {
+                        li.classList.toggle("active", li.querySelector("span")?.textContent?.trim() === today);
+                    });
                 }, 1500);
             } else if (data.status === "error") {
                 clearInterval(syncInterval);

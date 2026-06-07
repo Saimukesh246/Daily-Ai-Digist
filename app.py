@@ -213,6 +213,13 @@ def run_sync_job(date_str):
 
         add_log("Starting Daily AI Digest gathering job...")
 
+        # Clear today's cached articles so every sync fetches completely fresh content
+        cleared = database.clear_articles_for_date(DB_PATH, date_str)
+        if cleared:
+            add_log(f"Cleared {cleared} cached articles — fetching fresh content from all sources...")
+        else:
+            add_log("No cached articles for today — fetching fresh content from all sources...")
+
         cfg = database.get_scraper_config(DB_PATH)
 
         hn_cfg = cfg.get("hacker_news", {})
@@ -313,6 +320,8 @@ def run_sync_job(date_str):
         else:
             add_log("No Gemini API key — activating offline fallback engine...")
 
+        # Always force-regenerate — delete stale digest so analyze starts fresh
+        database.save_digest(DB_PATH, date_str, {})  # placeholder wipe
         digest, mode = analyzer.generate_digest(DB_PATH, date_str, api_key)
 
         if "fallback" in mode:
