@@ -1583,7 +1583,6 @@ function bootDashboard() {
             if (!res.ok) throw new Error("Failed to load scraper settings.");
             scraperConfig = await res.json();
             renderScraperSources();
-            renderCustomSources();
         } catch (err) {
             scraperSourceList.innerHTML = `<p class="settings-explanation" style="color:var(--accent-red);">Error: ${err.message}</p>`;
         }

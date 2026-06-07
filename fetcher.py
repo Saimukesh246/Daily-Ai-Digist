@@ -57,47 +57,50 @@ def fetch_hacker_news_ai(date_str, limit=20):
     return articles
 
 def fetch_reddit_ai(subreddits=None, limit=10):
-    """Fetches new/hot AI developments from key subreddits."""
-    logger.info("Fetching Reddit AI topics...")
+    """Fetches recent AI posts from key subreddits via PullPush (Reddit mirror).
+    Reddit's own API now requires OAuth; PullPush provides free read-only access.
+    """
+    logger.info("Fetching Reddit AI topics via PullPush mirror...")
     if not subreddits:
         subreddits = ["MachineLearning", "singularity", "ArtificialInteligence"]
     articles = []
 
     for sub in subreddits:
-        url = f"https://www.reddit.com/r/{sub}/hot.json?limit={limit}"
+        url = (
+            f"https://api.pullpush.io/reddit/search/submission/"
+            f"?subreddit={sub}&size={limit}&sort=desc&sort_type=created_utc"
+        )
         response = safe_request(url)
         if response:
             try:
-                data = response.json()
-                for post in data.get("data", {}).get("children", []):
-                    post_data = post.get("data", {})
-                    # Skip stickied posts
-                    if post_data.get("stickied"):
+                posts = response.json().get("data", [])
+                for post in posts:
+                    if post.get("stickied") or post.get("over_18"):
                         continue
-                    
-                    title = post_data.get("title")
-                    permalink = post_data.get("permalink")
-                    url_link = f"https://www.reddit.com{permalink}"
-                    score = post_data.get("score")
-                    comments = post_data.get("num_comments")
-                    selftext = post_data.get("selftext", "")
-                    
-                    # Truncate long descriptions
+                    title    = post.get("title", "").strip()
+                    if not title:
+                        continue
+                    permalink = post.get("permalink", "")
+                    url_link  = f"https://www.reddit.com{permalink}" if permalink else post.get("url", "")
+                    score    = post.get("score", 0)
+                    comments = post.get("num_comments", 0)
+                    selftext = (post.get("selftext") or "").strip()
+
                     desc = selftext[:200] + "..." if len(selftext) > 200 else selftext
-                    if not desc.strip():
+                    if not desc:
                         desc = f"Reddit Post in r/{sub} | Score: {score} | Comments: {comments}"
                     else:
-                        desc = f"[{sub}] {desc} | Score: {score} | Comments: {comments}"
-                        
+                        desc = f"[r/{sub}] {desc} | Score: {score} | Comments: {comments}"
+
                     articles.append({
-                        "source": f"Reddit r/{sub}",
+                        "source": "Reddit",
                         "title": title,
                         "description": desc,
                         "url": url_link,
                         "category": "news"
                     })
             except Exception as e:
-                logger.error(f"Error parsing Reddit r/{sub}: {e}")
+                logger.error(f"Error parsing PullPush response for r/{sub}: {e}")
     return articles
 
 def fetch_huggingface_papers(limit=15):
