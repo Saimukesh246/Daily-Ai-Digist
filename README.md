@@ -4,7 +4,7 @@
 <img src="https://img.shields.io/badge/FastAPI-0.111-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
 <img src="https://img.shields.io/badge/SQLite-embedded-003B57?style=for-the-badge&logo=sqlite&logoColor=white" />
 <img src="https://img.shields.io/badge/Gemini_AI-1.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white" />
-<img src="https://img.shields.io/badge/Deploy-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" />
+<img src="https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
 <img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" />
 
 # Daily AI Digest
@@ -13,7 +13,7 @@
 
 Crawls 7 live sources every day, synthesises everything through Google Gemini into a structured newsletter, and serves it as a glassmorphic dark-mode web app — with email delivery, full-text search, and zero paid services required.
 
-[Features](#-features) · [Quick Start](#-quick-start) · [Deploy to Railway](#-deploy-to-railway) · [Configuration](#-configuration) · [API Reference](#-api-reference)
+[Features](#-features) · [Quick Start](#-quick-start) · [Run with Docker Compose](#-run-with-docker-compose) · [Configuration](#-configuration) · [API Reference](#-api-reference)
 
 </div>
 
@@ -31,7 +31,7 @@ Crawls 7 live sources every day, synthesises everything through Google Gemini in
 | 🖼️ | **OG image thumbnails** | Server-side Open Graph proxy with shimmer loading animations |
 | 🔧 | **Scraper controls** | Toggle sources, set result limits, customise Reddit subreddits and GitHub keywords — all from the UI, no code edits |
 | 📱 | **Mobile responsive** | Sliding drawer sidebar, stacked grid layout, bottom-sheet search |
-| 🚄 | **Railway ready** | Dockerfile + `railway.toml` included; SQLite persisted via mounted Volume |
+| 🐳 | **Docker ready** | Dockerfile + `docker-compose.yml` included; SQLite database persisted in volume |
 
 ---
 
@@ -78,7 +78,7 @@ Daily-Ai-Digist/
 ├── database.py       # SQLite helpers: articles, digests, settings, subscribers
 ├── requirements.txt
 ├── Dockerfile
-├── railway.toml
+├── docker-compose.yml
 └── static/
     ├── index.html      # Single-page dashboard (no framework)
     ├── css/styles.css  # Glassmorphic dark-mode design system
@@ -100,25 +100,23 @@ Daily-Ai-Digist/
 
 ---
 
-## 🚄 Deploy to Railway
+## 🐳 Run with Docker Compose
 
-Railway is the recommended host because it supports always-on servers, background threads, and persistent volumes — all of which this app requires.
+Running inside Docker is the recommended way to run and deploy the application because it handles platform dependency isolation, database persistence, and keeps the background hourly aggregation daemon running reliably.
 
 ### Steps
 
-1. **Fork or push** this repo to your GitHub account.
-2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select this repo.
-3. Railway auto-detects the `Dockerfile` via `railway.toml`. No extra config needed.
-4. Add a **Volume** and mount it at `/app/data`.
-   This is where `ai_digest.db` lives — it survives every redeploy.
-5. Add environment variables in Railway → **Variables**:
-
-| Variable | Description |
-|---|---|
-| `GEMINI_API_KEY` | Your [Google AI Studio](https://aistudio.google.com) API key |
-| `APP_URL` | Your Railway public URL, e.g. `https://your-app.up.railway.app` |
-
-The health-check endpoint `GET /api/status` is pre-configured in `railway.toml` and keeps Railway's restart policy informed.
+1. Ensure [Docker Desktop](https://www.docker.com/products/docker-desktop/) is installed and running on your host.
+2. **Build the image**:
+   ```bash
+   docker compose build
+   ```
+3. **Start the application** in the background:
+   ```bash
+   docker compose up -d
+   ```
+4. **Access the Dashboard**: Open `http://localhost:8000` in your web browser.
+5. **Volume Persistence**: The SQLite database `ai_digest.db` is stored inside the named Docker volume `ai-digest-data` to preserve settings, digests, and bookmarks across container restarts.
 
 ---
 
@@ -132,9 +130,8 @@ All settings are stored in SQLite and editable from the **Settings** modal in th
 |---|---|---|---|
 | `GEMINI_API_KEY` | No | — | Gemini key for AI synthesis. Can also be saved in-app via Settings. |
 | `DATA_DIR` | No | App directory | Directory for `ai_digest.db`. Set to `/app/data` in Docker. |
-| `PORT` | No | `8000` | HTTP port. Set automatically by Railway. |
+| `PORT` | No | `8000` | HTTP port. |
 | `APP_URL` | No | `http://localhost:8000` | Public base URL used in email CTA links. |
-| `RAILWAY_ENVIRONMENT` | Auto | — | When present, binds `0.0.0.0` instead of `127.0.0.1`. |
 
 ### Email Delivery
 

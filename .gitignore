@@ -33,5 +33,6 @@ Thumbs.db
 venv/
 .venv/
 
-# Local scripts
+# Local scripts and logs
 fix_fetch.py
+*.log

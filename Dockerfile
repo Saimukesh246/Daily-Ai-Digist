@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# SQLite data directory — mount a Railway Volume here for persistence
+# SQLite data directory — mount a persistent volume here
 ENV DATA_DIR=/app/data
 ENV HOST=0.0.0.0
 RUN mkdir -p /app/data

@@ -407,6 +407,7 @@ function bootDashboard() {
     // Current state variables
     let activeDate = null;
     let syncInterval = null;
+    let bookmarkedUrls = new Set();   // fast lookup set
 
     // --- DOM ELEMENT REFERENCES ---
     const digestDateLabel = document.getElementById("digest-date-label");
@@ -644,7 +645,7 @@ function bootDashboard() {
                    </ul>`
                 : "";
 
-            const alreadySaved = window._isBookmarked && window._isBookmarked(news.link);
+            const alreadySaved = bookmarkedUrls.has(news.link);
             card.innerHTML = `
                 <div class="news-card-thumb ${gradClass}" style="position:relative;">
                     <button class="btn-bookmark ${alreadySaved ? "bookmarked" : ""}" data-url="${news.link}"
@@ -683,7 +684,8 @@ function bootDashboard() {
             const bmBtn = card.querySelector(".btn-bookmark");
             bmBtn && bmBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
-                window._toggleBookmark && window._toggleBookmark({
+                console.log("[Bookmark Click] Article:", news.headline, "Link:", news.link);
+                toggleBookmark({
                     url: news.link, title: news.headline,
                     source: news.who_should_care || "", digest_date: activeDate || ""
                 });
@@ -2027,8 +2029,6 @@ function bootDashboard() {
 
     // --- BOOKMARKS ---
 
-    let bookmarkedUrls = new Set();   // fast lookup set
-
     async function loadBookmarks() {
         try {
             const res = await apiFetch("/api/bookmarks");
@@ -2083,18 +2083,31 @@ function bootDashboard() {
     async function toggleBookmark(article) {
         const { url, title, source = "", description = "", digest_date = "" } = article;
         const isBookmarked = bookmarkedUrls.has(url);
+        console.log("[toggleBookmark] isBookmarked:", isBookmarked, "URL:", url);
 
         try {
             if (isBookmarked) {
+                console.log("[toggleBookmark] Deleting bookmark for URL:", url);
                 const res = await apiFetch(`/api/bookmarks?url=${encodeURIComponent(url)}`, { method: "DELETE" });
-                if (res.ok) bookmarkedUrls.delete(url);
+                if (res.ok) {
+                    console.log("[toggleBookmark] Delete successful");
+                    bookmarkedUrls.delete(url);
+                } else {
+                    console.warn("[toggleBookmark] Delete returned non-OK status:", res.status);
+                }
             } else {
+                console.log("[toggleBookmark] Creating bookmark for URL:", url);
                 const res = await apiFetch("/api/bookmarks", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ url, title, source, description, digest_date })
                 });
-                if (res.ok) bookmarkedUrls.add(url);
+                if (res.ok) {
+                    console.log("[toggleBookmark] Create successful");
+                    bookmarkedUrls.add(url);
+                } else {
+                    console.warn("[toggleBookmark] Create returned non-OK status:", res.status);
+                }
             }
             await loadBookmarks();
         } catch (e) { console.error("Bookmark toggle failed:", e); }
