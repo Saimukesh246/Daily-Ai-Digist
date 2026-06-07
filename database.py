@@ -105,18 +105,61 @@ def init_db(db_path=DEFAULT_DB_PATH):
     except sqlite3.OperationalError:
         pass  # column already exists
 
-    # Seed default sources on first startup
+    # Master list of curated, verified-working AI/ML blog sources
+    MASTER_SOURCES = [
+        # ── AI Lab official blogs ───────────────────────────────────────────
+        ("OpenAI Blog",            "https://openai.com/blog/rss.xml",                           "rss",    1),
+        ("Anthropic Blog",         "https://www.anthropic.com/news",                             "scrape", 1),
+        ("Google DeepMind Blog",   "https://deepmind.google/blog/rss.xml",                      "rss",    1),
+        ("Google AI Blog",         "https://blog.google/technology/ai/rss/",                    "rss",    1),
+        ("Hugging Face Blog",      "https://huggingface.co/blog/feed.xml",                      "rss",    1),
+        ("NVIDIA AI Blog",         "https://blogs.nvidia.com/blog/category/deep-learning/feed/","rss",    1),
+        ("AWS ML Blog",            "https://aws.amazon.com/blogs/machine-learning/feed/",       "rss",    1),
+
+        # ── Research & academia ─────────────────────────────────────────────
+        ("Berkeley AI Research",   "https://bair.berkeley.edu/blog/feed.xml",                   "rss",    1),
+        ("Distill.pub",            "https://distill.pub/rss.xml",                               "rss",    1),
+        ("The Gradient",           "https://thegradient.pub/rss/",                              "rss",    1),
+        ("AI Alignment Forum",     "https://www.alignmentforum.org/feed.xml",                   "rss",    1),
+
+        # ── Newsletters & independent researchers ───────────────────────────
+        ("Import AI (Jack Clark)",  "https://jack-clark.net/feed/",                             "rss",    1),
+        ("Last Week in AI",         "https://lastweekin.ai/feed",                               "rss",    1),
+        ("Lilian Weng Blog",        "https://lilianweng.github.io/index.xml",                   "rss",    1),
+        ("Andrej Karpathy",         "https://karpathy.substack.com/feed",                       "rss",    1),
+        ("Sebastian Raschka",       "https://magazine.sebastianraschka.com/feed",               "rss",    1),
+        ("Simon Willison",          "https://simonwillison.net/atom/everything/",                "rss",    1),
+        ("Jay Alammar Blog",        "https://jalammar.github.io/feed.xml",                      "rss",    1),
+        ("LessWrong (AI curated)",  "https://www.lesswrong.com/feed.xml?view=curated-rss",      "rss",    1),
+
+        # ── Tech news & media ───────────────────────────────────────────────
+        ("MIT Technology Review",  "https://www.technologyreview.com/feed/",                    "rss",    1),
+        ("Ars Technica AI",        "https://feeds.arstechnica.com/arstechnica/technology-lab",  "rss",    1),
+        ("VentureBeat AI",         "https://venturebeat.com/category/ai/feed/",                 "rss",    1),
+        ("TechCrunch AI",          "https://techcrunch.com/category/artificial-intelligence/feed/","rss", 1),
+        ("The Verge AI",           "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml","rss",1),
+        ("InfoQ AI & ML",          "https://feed.infoq.com/ai-ml-data-eng/",                   "rss",    1),
+
+        # ── Developer tools & platforms ─────────────────────────────────────
+        ("Replicate Blog",         "https://replicate.com/blog/rss",                            "rss",    1),
+        ("Lex Fridman",            "https://lexfridman.com/feed/",                              "rss",    0),
+    ]
+
+    now_str = datetime.utcnow().isoformat()
+
+    # Seed on first startup (empty table)
     cursor.execute("SELECT COUNT(*) FROM sources")
     if cursor.fetchone()[0] == 0:
-        now_str = datetime.utcnow().isoformat()
         cursor.executemany("""
         INSERT INTO sources (name, url, source_type, enabled, created_at)
         VALUES (?, ?, ?, ?, ?)
-        """, [
-            ("OpenAI Blog", "https://openai.com/news/rss/", "rss", 1, now_str),
-            ("Google DeepMind Blog", "https://deepmind.google/blog/rss.xml", "rss", 1, now_str),
-            ("Anthropic Blog", "https://www.anthropic.com/news", "scrape", 1, now_str)
-        ])
+        """, [(n, u, t, e, now_str) for n, u, t, e in MASTER_SOURCES])
+    else:
+        # Migration: insert any missing sources for existing installations
+        cursor.executemany("""
+        INSERT OR IGNORE INTO sources (name, url, source_type, enabled, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """, [(n, u, t, e, now_str) for n, u, t, e in MASTER_SOURCES])
 
     conn.commit()
     conn.close()
