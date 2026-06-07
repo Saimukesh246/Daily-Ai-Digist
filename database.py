@@ -98,6 +98,13 @@ def init_db(db_path=DEFAULT_DB_PATH):
     )
     """)
 
+    # Live migration: add role column to users if not already there
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'viewer'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
     # Seed default sources on first startup
     cursor.execute("SELECT COUNT(*) FROM sources")
     if cursor.fetchone()[0] == 0:
@@ -473,16 +480,16 @@ def toggle_source(db_path, source_id):
 # AUTH — Users & Sessions
 # =============================================================================
 
-def create_user(db_path, email, name="", password_hash="", google_id="", avatar_url=""):
+def create_user(db_path, email, name="", password_hash="", google_id="", avatar_url="", role="viewer"):
     """Creates a new user. Returns user dict on success, None if email already exists."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
     created_at = datetime.utcnow().isoformat()
     try:
         cursor.execute("""
-        INSERT INTO users (email, name, password_hash, google_id, avatar_url, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """, (email.strip().lower(), name.strip(), password_hash, google_id, avatar_url, created_at))
+        INSERT INTO users (email, name, password_hash, google_id, avatar_url, created_at, role)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (email.strip().lower(), name.strip(), password_hash, google_id, avatar_url, created_at, role))
         conn.commit()
         user_id = cursor.lastrowid
         conn.close()
@@ -552,6 +559,32 @@ def get_user_count(db_path):
     row = cursor.fetchone()
     conn.close()
     return row["cnt"] if row else 0
+
+
+def get_all_users(db_path):
+    """Returns all users as a list of dicts (password_hash excluded)."""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, email, name, role, avatar_url, created_at, last_login
+        FROM users ORDER BY created_at ASC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def update_user_role(db_path, user_id, role):
+    """Sets a user's role ('admin' or 'viewer'). Returns True if a row was updated."""
+    if role not in ("admin", "viewer"):
+        return False
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
 
 
 def save_session(db_path, token, user_id, expires_hours=720):

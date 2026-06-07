@@ -76,8 +76,30 @@ async function apiFetch(url, options = {}) {
         mainApp.classList.remove("hidden");
         // Update user profile pill
         updateUserPill(user);
+        // Apply role-based UI restrictions
+        applyRoleUI(user);
         // Boot main dashboard
         bootDashboard();
+    }
+
+    function applyRoleUI(user) {
+        const isAdmin = user && user.role === "admin";
+
+        // Body class drives CSS admin-only visibility
+        document.body.classList.toggle("is-admin", isAdmin);
+
+        // Sync button — admin only
+        const syncBtn = document.getElementById("btn-trigger-sync");
+        if (syncBtn) syncBtn.style.display = isAdmin ? "" : "none";
+
+        // Settings button — admin only
+        const settingsBtn = document.getElementById("btn-settings-toggle");
+        if (settingsBtn) settingsBtn.style.display = isAdmin ? "" : "none";
+
+        // Users tab in settings — admin only
+        document.querySelectorAll(".admin-only-tab").forEach(el => {
+            el.classList.toggle("visible", isAdmin);
+        });
     }
 
     async function checkExistingSession() {
@@ -1256,6 +1278,9 @@ function bootDashboard() {
             if (target === "news-feeds") {
                 loadDynamicFeeds();
             }
+            if (target === "users") {
+                loadUsers();
+            }
         });
     });
 
@@ -1459,6 +1484,86 @@ function bootDashboard() {
     }
 
     btnSendTest && btnSendTest.addEventListener("click", sendTestEmail);
+
+    // --- USER MANAGEMENT (admin only) ---
+
+    const usersList       = document.getElementById("users-list");
+    const usersStatusText = document.getElementById("users-status-text");
+    const btnCloseUsers   = document.getElementById("btn-close-users");
+
+    btnCloseUsers && btnCloseUsers.addEventListener("click", () => {
+        settingsModalOverlay.classList.add("hidden");
+    });
+
+    let cachedCurrentUserId = null;
+
+    async function loadUsers() {
+        if (!usersList) return;
+        usersList.innerHTML = '<p class="subscriber-empty">Loading...</p>';
+        try {
+            const res  = await apiFetch("/api/users");
+            if (!res.ok) throw new Error((await res.json()).detail || "Failed to load users.");
+            const data = await res.json();
+
+            // Cache current user id so we can mark "You" and disable self-demote
+            const meRes = await apiFetch("/api/auth/me");
+            if (meRes.ok) { const me = await meRes.json(); cachedCurrentUserId = me.id; }
+
+            usersList.innerHTML = "";
+            data.users.forEach(u => renderUserRow(u));
+        } catch (err) {
+            usersList.innerHTML = `<p class="subscriber-empty" style="color:var(--accent-red);">Error: ${err.message}</p>`;
+        }
+    }
+
+    function renderUserRow(u) {
+        const isMe    = u.id === cachedCurrentUserId;
+        const initial = (u.name || u.email)[0].toUpperCase();
+        const joined  = u.created_at ? u.created_at.split("T")[0] : "";
+        const isAdmin = u.role === "admin";
+
+        const row = document.createElement("div");
+        row.className = "user-row";
+        row.dataset.userId = u.id;
+
+        row.innerHTML = `
+            <div class="user-avatar-initial">${initial}</div>
+            <div class="user-info">
+                <span class="user-name">${u.name || "—"}
+                    ${isMe ? '<span class="user-you-badge">You</span>' : ""}
+                </span>
+                <span class="user-email">${u.email}</span>
+            </div>
+            <span class="role-badge ${u.role}">${isAdmin ? "&#x1F451; Admin" : "&#x1F441; Viewer"}</span>
+            <span class="user-joined">${joined}</span>
+            ${!isMe ? `<button class="btn-toggle-role ${isAdmin ? "demote" : ""}" data-id="${u.id}" data-current="${u.role}">
+                ${isAdmin ? "Make Viewer" : "Make Admin"}
+            </button>` : ""}
+        `;
+
+        const btn = row.querySelector(".btn-toggle-role");
+        btn && btn.addEventListener("click", () => toggleUserRole(u.id, u.role, row));
+
+        usersList.appendChild(row);
+    }
+
+    async function toggleUserRole(userId, currentRole, rowEl) {
+        const newRole = currentRole === "admin" ? "viewer" : "admin";
+        if (usersStatusText) { usersStatusText.textContent = "Saving…"; usersStatusText.style.color = "var(--accent-cyan)"; }
+        try {
+            const res = await apiFetch(`/api/users/${userId}/role`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ role: newRole })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || "Update failed.");
+            if (usersStatusText) { usersStatusText.textContent = `✓ Role updated to ${newRole}.`; usersStatusText.style.color = "var(--accent-green)"; }
+            // Refresh the list
+            await loadUsers();
+        } catch (err) {
+            if (usersStatusText) { usersStatusText.textContent = `Error: ${err.message}`; usersStatusText.style.color = "var(--accent-red)"; }
+        }
+    }
 
     // --- SCRAPER / SOURCES SETTINGS ---
 

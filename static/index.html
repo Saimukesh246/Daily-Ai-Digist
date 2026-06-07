@@ -12,7 +12,7 @@
     <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom Style System -->
-    <link rel="stylesheet" href="/static/css/styles.css?v=5">
+    <link rel="stylesheet" href="/static/css/styles.css?v=6">
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- Anime.js for login path animations -->
@@ -402,6 +402,9 @@
                 <button class="settings-tab-btn" data-tab="news-feeds">
                     <i class="fa-solid fa-rss"></i> Blogs &amp; RSS
                 </button>
+                <button class="settings-tab-btn admin-only-tab" data-tab="users">
+                    <i class="fa-solid fa-users"></i> Users
+                </button>
             </div>
 
             <!-- Tab Panel: AI Model -->
@@ -541,6 +544,27 @@
                 </div>
             </div>
 
+            <!-- Tab Panel: Users (admin only) -->
+            <div class="settings-tab-panel hidden" id="settings-panel-users">
+                <div class="settings-body">
+                    <div class="email-section">
+                        <h4 class="email-section-title">
+                            <i class="fa-solid fa-users"></i> Team Members
+                        </h4>
+                        <p class="settings-explanation">
+                            Manage who has access to this dashboard. <strong>Admins</strong> can sync, configure settings, and manage users. <strong>Viewers</strong> can only browse digests and search articles.
+                        </p>
+                        <div id="users-list" class="users-list">
+                            <p class="subscriber-empty">Loading users...</p>
+                        </div>
+                    </div>
+                    <div class="form-actions" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:16px; margin-top:4px;">
+                        <span class="key-status-text" id="users-status-text"></span>
+                        <button class="btn btn-secondary" id="btn-close-users">Close</button>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -567,6 +591,6 @@
     </div>
 
     <!-- Dynamic JavaScript Engine -->
-    <script src="/static/js/app.js?v=5"></script>
+    <script src="/static/js/app.js?v=6"></script>
 </body>
 </html>

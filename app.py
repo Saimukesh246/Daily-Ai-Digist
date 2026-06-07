@@ -136,6 +136,13 @@ def require_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(s
         raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
     return user
 
+
+def require_admin(user: dict = Depends(require_auth)):
+    """Dependency: raises 403 if the authenticated user is not an admin."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required. Contact your administrator.")
+    return user
+
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
@@ -360,7 +367,9 @@ async def register(payload: RegisterPayload, request: Request):
 
     name          = payload.name.strip() or email.split("@")[0]
     password_hash = hash_password(payload.password)
-    user          = database.create_user(DB_PATH, email, name=name, password_hash=password_hash)
+    # First registered user becomes admin automatically
+    role = "admin" if database.get_user_count(DB_PATH) == 0 else "viewer"
+    user = database.create_user(DB_PATH, email, name=name, password_hash=password_hash, role=role)
 
     if not user:
         raise HTTPException(status_code=500, detail="Failed to create account.")
@@ -369,7 +378,6 @@ async def register(payload: RegisterPayload, request: Request):
     database.save_session(DB_PATH, token, user["id"])
     database.update_user_last_login(DB_PATH, user["id"])
 
-    # Send login confirmation email in background
     smtp = get_smtp_settings()
     threading.Thread(
         target=emailer.send_login_confirmation_email,
@@ -379,7 +387,8 @@ async def register(payload: RegisterPayload, request: Request):
 
     return {
         "token": token,
-        "user":  {"id": user["id"], "email": user["email"], "name": user["name"], "avatar_url": user.get("avatar_url", "")},
+        "user":  {"id": user["id"], "email": user["email"], "name": user["name"],
+                  "avatar_url": user.get("avatar_url", ""), "role": user.get("role", "viewer")},
         "message": "Account created successfully."
     }
 
@@ -410,7 +419,8 @@ async def login(payload: LoginPayload, request: Request):
 
     return {
         "token": token,
-        "user":  {"id": user["id"], "email": user["email"], "name": user["name"], "avatar_url": user.get("avatar_url", "")},
+        "user":  {"id": user["id"], "email": user["email"], "name": user["name"],
+                  "avatar_url": user.get("avatar_url", ""), "role": user.get("role", "viewer")},
         "message": "Login successful."
     }
 
@@ -463,9 +473,10 @@ async def google_auth(payload: GoogleAuthPayload, request: Request):
             user = database.get_user_by_id(DB_PATH, user["id"])
         else:
             # First-time Google sign-in — create account
+            role = "admin" if database.get_user_count(DB_PATH) == 0 else "viewer"
             user = database.create_user(
                 DB_PATH, email, name=name,
-                google_id=google_id, avatar_url=avatar_url
+                google_id=google_id, avatar_url=avatar_url, role=role
             )
             if not user:
                 raise HTTPException(status_code=500, detail="Failed to create account.")
@@ -484,7 +495,8 @@ async def google_auth(payload: GoogleAuthPayload, request: Request):
 
         return {
             "token": session_token,
-            "user":  {"id": user["id"], "email": user["email"], "name": user["name"], "avatar_url": user.get("avatar_url", "")},
+            "user":  {"id": user["id"], "email": user["email"], "name": user["name"],
+                      "avatar_url": user.get("avatar_url", ""), "role": user.get("role", "viewer")},
             "message": "Google login successful."
         }
 
@@ -505,6 +517,7 @@ async def get_me(current_user: dict = Depends(require_auth)):
         "avatar_url": current_user.get("avatar_url", ""),
         "created_at": current_user.get("created_at", ""),
         "last_login": current_user.get("last_login", ""),
+        "role":       current_user.get("role", "viewer"),
     }
 
 
@@ -584,7 +597,7 @@ async def get_digest_by_date(date: str, _user: dict = Depends(require_auth)):
 
 @app.post("/api/trigger")
 async def trigger_sync(background_tasks: BackgroundTasks, date: str = None,
-                        _user: dict = Depends(require_auth)):
+                        _user: dict = Depends(require_admin)):
     global SYNC_STATUS
     if SYNC_STATUS["status"] in ["fetching", "analyzing"]:
         return JSONResponse(status_code=400, content={"detail": "A synchronization run is already active."})
@@ -608,7 +621,7 @@ async def get_settings(_user: dict = Depends(require_auth)):
 
 
 @app.post("/api/settings")
-async def update_settings(payload: SettingsPayload, _user: dict = Depends(require_auth)):
+async def update_settings(payload: SettingsPayload, _user: dict = Depends(require_admin)):
     if not payload.gemini_api_key.strip():
         raise HTTPException(status_code=400, detail="API Key cannot be empty.")
     database.save_setting(DB_PATH, "gemini_api_key", payload.gemini_api_key.strip())
@@ -628,7 +641,7 @@ async def get_email_settings(_user: dict = Depends(require_auth)):
 
 
 @app.post("/api/settings/email")
-async def update_email_settings(payload: EmailSettingsPayload, _user: dict = Depends(require_auth)):
+async def update_email_settings(payload: EmailSettingsPayload, _user: dict = Depends(require_admin)):
     database.save_setting(DB_PATH, "smtp_host",      payload.smtp_host.strip())
     database.save_setting(DB_PATH, "smtp_port",      str(payload.smtp_port))
     database.save_setting(DB_PATH, "smtp_user",      payload.smtp_user.strip())
@@ -645,7 +658,7 @@ async def get_scraper_settings(_user: dict = Depends(require_auth)):
 
 
 @app.post("/api/settings/scraper")
-async def update_scraper_settings(payload: ScraperSettingsPayload, _user: dict = Depends(require_auth)):
+async def update_scraper_settings(payload: ScraperSettingsPayload, _user: dict = Depends(require_admin)):
     if not isinstance(payload.config, dict):
         raise HTTPException(status_code=400, detail="config must be a JSON object.")
     database.save_scraper_config(DB_PATH, payload.config)
@@ -696,7 +709,7 @@ async def list_sources(_user: dict = Depends(require_auth)):
 
 
 @app.post("/api/sources")
-async def add_source(payload: SourcePayload, _user: dict = Depends(require_auth)):
+async def add_source(payload: SourcePayload, _user: dict = Depends(require_admin)):
     name  = payload.name.strip()
     url   = payload.url.strip()
     stype = payload.source_type.strip().lower()
@@ -719,7 +732,7 @@ async def add_source(payload: SourcePayload, _user: dict = Depends(require_auth)
 
 
 @app.put("/api/sources/{id}")
-async def update_source(id: int, payload: SourcePayload, _user: dict = Depends(require_auth)):
+async def update_source(id: int, payload: SourcePayload, _user: dict = Depends(require_admin)):
     name  = payload.name.strip()
     url   = payload.url.strip()
     stype = payload.source_type.strip().lower()
@@ -737,7 +750,7 @@ async def update_source(id: int, payload: SourcePayload, _user: dict = Depends(r
 
 
 @app.delete("/api/sources/{id}")
-async def delete_source(id: int, _user: dict = Depends(require_auth)):
+async def delete_source(id: int, _user: dict = Depends(require_admin)):
     success = database.delete_source(DB_PATH, id)
     if not success:
         raise HTTPException(status_code=404, detail="Source not found.")
@@ -745,7 +758,7 @@ async def delete_source(id: int, _user: dict = Depends(require_auth)):
 
 
 @app.post("/api/sources/{id}/toggle")
-async def toggle_source(id: int, _user: dict = Depends(require_auth)):
+async def toggle_source(id: int, _user: dict = Depends(require_admin)):
     success, new_state = database.toggle_source(DB_PATH, id)
     if not success:
         raise HTTPException(status_code=404, detail="Source not found.")
@@ -759,7 +772,7 @@ async def list_subscribers(_user: dict = Depends(require_auth)):
 
 
 @app.post("/api/subscribers")
-async def add_subscriber(payload: SubscriberPayload, _user: dict = Depends(require_auth)):
+async def add_subscriber(payload: SubscriberPayload, _user: dict = Depends(require_admin)):
     import re
     if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.email):
         raise HTTPException(status_code=400, detail="Invalid email address.")
@@ -770,7 +783,7 @@ async def add_subscriber(payload: SubscriberPayload, _user: dict = Depends(requi
 
 
 @app.delete("/api/subscribers/{email:path}")
-async def remove_subscriber(email: str, _user: dict = Depends(require_auth)):
+async def remove_subscriber(email: str, _user: dict = Depends(require_admin)):
     removed = database.remove_subscriber(DB_PATH, email)
     if not removed:
         raise HTTPException(status_code=404, detail="Subscriber not found.")
@@ -778,7 +791,7 @@ async def remove_subscriber(email: str, _user: dict = Depends(require_auth)):
 
 
 @app.post("/api/email/test")
-async def send_test_email(payload: TestEmailPayload, _user: dict = Depends(require_auth)):
+async def send_test_email(payload: TestEmailPayload, _user: dict = Depends(require_admin)):
     import re
     if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.to):
         raise HTTPException(status_code=400, detail="Invalid recipient email address.")
@@ -794,6 +807,31 @@ async def send_test_email(payload: TestEmailPayload, _user: dict = Depends(requi
     if result["sent"] > 0:
         return {"message": f"Test email sent to {payload.to}.", "result": result}
     raise HTTPException(status_code=500, detail=f"Send failed: {'; '.join(result['errors'])}")
+
+# ---------------------------------------------------------------------------
+# User management (admin only)
+# ---------------------------------------------------------------------------
+
+class RolePayload(BaseModel):
+    role: str  # "admin" or "viewer"
+
+@app.get("/api/users")
+async def list_users(_user: dict = Depends(require_admin)):
+    """Returns all registered users (admin only)."""
+    return {"users": database.get_all_users(DB_PATH)}
+
+@app.patch("/api/users/{user_id}/role")
+async def update_user_role(user_id: int, payload: RolePayload,
+                            current_user: dict = Depends(require_admin)):
+    """Promotes or demotes a user. Admins cannot demote themselves."""
+    if payload.role not in ("admin", "viewer"):
+        raise HTTPException(status_code=400, detail="Role must be 'admin' or 'viewer'.")
+    if user_id == current_user["id"] and payload.role == "viewer":
+        raise HTTPException(status_code=400, detail="You cannot demote yourself.")
+    updated = database.update_user_role(DB_PATH, user_id, payload.role)
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {"message": f"User role updated to '{payload.role}'."}
 
 # ---------------------------------------------------------------------------
 # Scheduled email dispatch
