@@ -7,7 +7,6 @@ import urllib.parse
 from bs4 import BeautifulSoup
 import logging
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("fetcher")
 
 # Custom headers to prevent blocks (particularly from Reddit and other sensitive platforms)

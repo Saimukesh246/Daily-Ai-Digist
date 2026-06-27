@@ -4,7 +4,7 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /
+    healthCheckPath: /healthz
     envVars:
       - key: HOST
         value: 0.0.0.0

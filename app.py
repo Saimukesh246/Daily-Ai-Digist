@@ -5,6 +5,13 @@ import threading
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+
+# Configured first, before any other module-level `logging.basicConfig` call
+# elsewhere in the codebase can install a conflicting plain-text handler.
+from logging_config import configure_logging
+configure_logging()
+logger = logging.getLogger("app")
+
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Response, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,7 +40,7 @@ try:
 except ImportError:
     BCRYPT_AVAILABLE = False
     _bcrypt = None
-    logging.getLogger("app").warning(
+    logger.warning(
         "bcrypt is not installed — falling back to unsalted SHA-256 for password "
         "hashing. This is significantly weaker; install bcrypt as soon as possible."
     )
@@ -43,9 +50,6 @@ import fetcher
 import analyzer
 import emailer
 import weekly_emailer
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("app")
 
 # ---------------------------------------------------------------------------
 # Lifespan (replaces deprecated @app.on_event)
@@ -370,6 +374,23 @@ def run_sync_job(date_str):
 # ---------------------------------------------------------------------------
 # WEB ENDPOINTS
 # ---------------------------------------------------------------------------
+
+@app.get("/healthz")
+async def healthz():
+    """Liveness/readiness probe — verifies the app can actually reach Postgres,
+    not just that the process is running. No auth required (used by uptime
+    monitors / Render's health checks)."""
+    try:
+        conn = database.get_db_connection()
+        try:
+            conn.cursor().execute("SELECT 1")
+        finally:
+            database.release_db_connection(conn)
+        return {"status": "ok", "database": "ok"}
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable", "detail": str(e)})
+
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
@@ -1062,11 +1083,7 @@ def start_hourly_scheduler():
             try:
                 now       = datetime.now()
                 today_str = now.strftime("%Y-%m-%d")
-                conn      = database.get_db_connection(DB_PATH)
-                cursor    = conn.cursor()
-                cursor.execute("SELECT date FROM digests WHERE date = ?", (today_str,))
-                row = cursor.fetchone()
-                conn.close()
+                row = database.get_digest(DB_PATH, today_str)
 
                 if not row and SYNC_STATUS["status"] == "idle":
                     logger.info(f"Auto-Scheduler: Today's digest ({today_str}) missing. Auto-triggering...")

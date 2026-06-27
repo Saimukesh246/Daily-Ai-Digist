@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import google.generativeai as genai
 from database import get_setting, save_digest, get_raw_articles_by_date, get_raw_articles_since
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("analyzer")
 
 def clean_gemini_json(response_text):
