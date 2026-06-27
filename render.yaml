@@ -2,21 +2,15 @@ services:
   - type: web
     name: ai-digest
     runtime: docker
-    plan: starter
+    plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
     envVars:
       - key: HOST
         value: 0.0.0.0
-      - key: DATA_DIR
-        value: /app/data
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: APP_URL
         sync: false
-    disk:
-      name: ai-digest-data
-      mountPath: /app/data
-      sizeGB: 1
