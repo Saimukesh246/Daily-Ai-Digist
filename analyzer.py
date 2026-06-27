@@ -18,9 +18,15 @@ def clean_gemini_json(response_text):
         text = text[:-3]
     return text.strip()
 
-def run_offline_fallback(date_str, raw_items):
+def run_offline_fallback(date_str, raw_items, past_items=None):
     """Compiles real crawled news items into the strict newsletter JSON schema without Gemini."""
     logger.info("No Gemini API key available. Running intelligent offline fallback...")
+    past_items = past_items or []
+
+    # Deterministic per-day rotation seed — picks a different angle each day
+    # without needing real randomness, so reruns on the same date stay stable.
+    import hashlib
+    day_seed = int(hashlib.sha256(date_str.encode()).hexdigest(), 16)
 
     # Build news items by round-robining sources to ensure diversity in the offline fallback
     by_source = {}
@@ -242,12 +248,19 @@ def run_offline_fallback(date_str, raw_items):
     ]
     selected_news = news_items[:3] if len(news_items) >= 2 else default_news
     biggest_news = []
+    seen_why_it_matters = set()
     for item in selected_news:
         desc = (item.get("description") or "A significant AI development published today by researchers and industry leaders.")
+        why = _why_news(item)
+        if why in seen_why_it_matters:
+            # Two items landed in the same keyword bucket — tack on a source-specific
+            # clause so cards don't read as verbatim duplicates of each other.
+            why = f"{why} ({item['source']}'s framing here adds a distinct angle worth reading in full.)"
+        seen_why_it_matters.add(_why_news(item))
         biggest_news.append({
             "headline": item["title"],
             "summary": desc[:300],
-            "why_it_matters": _why_news(item),
+            "why_it_matters": why,
             "key_features": _key_features(item),
             "real_world_impact": _real_world_impact(item),
             "who_should_care": _who_cares(item),
@@ -273,8 +286,34 @@ def run_offline_fallback(date_str, raw_items):
             "link": item["url"]
         })
 
-    # 4. What Changed
-    what_changed = [
+    def _pick_rotated(pool, n):
+        """Deterministically rotates which entries from a static pool surface today,
+        based on the date — so re-running the fallback on the same day is stable,
+        but different days show different entries instead of always the first n."""
+        if len(pool) <= n:
+            return list(pool)
+        start = day_seed % len(pool)
+        return [pool[(start + i) % len(pool)] for i in range(n)]
+
+    # 4. What Changed — prefer real scraped items that look like an update/release
+    # announcement; only fall back to the static pool if nothing matches today.
+    update_signal_words = ["update", "v2", "v3", "new version", "pricing", "deprecat",
+                            "release", "upgrad", "expand", "now supports", "rebrand"]
+    update_candidates = [
+        it for it in raw_items
+        if any(w in _ctx(it) for w in update_signal_words)
+    ]
+    dynamic_changes = []
+    for it in update_candidates[:2]:
+        desc = (it.get("description") or "").strip()
+        dynamic_changes.append({
+            "tool_or_company": it["source"],
+            "yesterday": "Prior state before today's update.",
+            "today": (it["title"] + (f" — {desc[:140]}" if desc else "")).strip(),
+            "why_it_matters": _why_news(it),
+        })
+
+    fallback_changes_pool = [
         {"tool_or_company": "Gemini API Platform",
          "yesterday": "Standard prompt windows with base vision support.",
          "today": "Expanded system instructions, native JSON schema enforcement, and 2M token context windows.",
@@ -282,11 +321,20 @@ def run_offline_fallback(date_str, raw_items):
         {"tool_or_company": "Open-Source LLMs (Llama, Mistral)",
          "yesterday": "Large compute requirements and heavy GPU quantization overhead.",
          "today": "Ultra-efficient FP4/FP8 quantization, context extension, and mobile-native execution paths.",
-         "why_it_matters": "Makes private, local deployments of powerful reasoning models viable for mid-sized enterprises without dedicated GPU clusters."}
+         "why_it_matters": "Makes private, local deployments of powerful reasoning models viable for mid-sized enterprises without dedicated GPU clusters."},
+        {"tool_or_company": "Agent Orchestration Frameworks",
+         "yesterday": "Single-agent, single-tool call chains with manual retry logic.",
+         "today": "Native multi-agent handoff, persistent state, and built-in evaluation harnesses.",
+         "why_it_matters": "Lets teams ship reliable multi-step automations without hand-rolling coordination logic from scratch."},
+        {"tool_or_company": "Vector Database Providers",
+         "yesterday": "Pure similarity search with limited metadata filtering.",
+         "today": "Hybrid search combining keyword, vector, and metadata filters in a single query.",
+         "why_it_matters": "Cuts RAG pipeline complexity by removing the need for a separate keyword-search layer."},
     ]
+    what_changed = dynamic_changes if dynamic_changes else _pick_rotated(fallback_changes_pool, 2)
 
-    # 5. Trending Workflows
-    trending_workflows = [
+    # 5. Trending Workflows — rotated daily so the same two don't show every time.
+    workflow_pool = [
         {"title": "Automated Code Review & PR Assistant",
          "problem_solved": "Senior engineers spending hours on manual style and safety reviews in every pull request.",
          "tools_used": "GitHub Actions, Gemini API, Pytest, Git",
@@ -308,8 +356,31 @@ def run_offline_fallback(date_str, raw_items):
              "Synthesise a final response in a local Streamlit interface with source citations."
          ],
          "business_value": "Eliminates data leakage to third-party endpoints and cuts internal search time from minutes to seconds.",
-         "difficulty": "Beginner"}
+         "difficulty": "Beginner"},
+        {"title": "Autonomous Bug Triage Agent",
+         "problem_solved": "Issue trackers piling up faster than engineers can read, label, and prioritize them.",
+         "tools_used": "GitHub Issues API, Gemini API, vector store for duplicate detection",
+         "steps": [
+             "New issue webhook triggers a classification agent.",
+             "Agent checks for duplicates against a vector index of past issues.",
+             "Severity and component labels are assigned based on stack trace and title patterns.",
+             "A draft reproduction summary is posted for a human to confirm or correct."
+         ],
+         "business_value": "Cuts time-to-triage from hours to minutes and keeps duplicate reports from cluttering the backlog.",
+         "difficulty": "Intermediate"},
+        {"title": "Daily Competitive Intelligence Digest",
+         "problem_solved": "Product teams manually checking competitor changelogs, pricing pages, and release notes.",
+         "tools_used": "RSS/web scraping, Gemini API, scheduled cron job, email/Slack delivery",
+         "steps": [
+             "Scheduled job scrapes competitor blogs, changelogs, and pricing pages.",
+             "Content is diffed against yesterday's snapshot to isolate real changes.",
+             "Gemini summarizes what changed and why it might matter strategically.",
+             "Summary is delivered to a Slack channel or email digest each morning."
+         ],
+         "business_value": "Replaces hours of manual competitor monitoring with a five-minute morning read.",
+         "difficulty": "Beginner"},
     ]
+    trending_workflows = _pick_rotated(workflow_pool, 2)
 
     # 6. Open Source & Research
     open_source_research = []
@@ -341,33 +412,71 @@ def run_offline_fallback(date_str, raw_items):
              "link": "https://github.com/ggerganov/llama.cpp"}
         ]
 
-    # 7. Market Movements
-    market_industry = [
+    # 7. Market Movements — prefer real scraped items with funding/enterprise signal.
+    market_signal_words = ["fund", "invest", "acqui", "ipo", "valuation", "raise",
+                            "enterprise", "partnership", "deal", "billion", "million"]
+    market_candidates = [it for it in raw_items if any(w in _ctx(it) for w in market_signal_words)]
+    dynamic_market = []
+    for it in market_candidates[:2]:
+        desc = (it.get("description") or "")[:280]
+        dynamic_market.append({
+            "headline": it["title"],
+            "summary": desc or f"Reported via {it['source']}.",
+            "category": "Funding" if any(w in _ctx(it) for w in ["fund", "invest", "raise", "billion", "million"]) else "Enterprise",
+            "link": it["url"],
+        })
+
+    fallback_market_pool = [
         {"headline": "AI Infrastructure Startups Attract Record Round Sizes in Latest Funding Cycle",
          "summary": "Capital is concentrating in specialised AI hardware, cloud aggregation layers, and model security networks rather than consumer-facing wrappers.",
          "category": "Funding", "link": "https://news.ycombinator.com"},
         {"headline": "Enterprise SaaS Platforms Accelerate Native AI Integration Mandates",
          "summary": "Over 70% of enterprise platforms surveyed have added LLM-orchestrated features to core CRM and workflow dashboards within the past 12 months.",
-         "category": "Enterprise", "link": "https://producthunt.com"}
+         "category": "Enterprise", "link": "https://producthunt.com"},
+        {"headline": "Cloud Providers Compete on Inference Cost Rather Than Raw Model Quality",
+         "summary": "With frontier model capabilities converging, providers are differentiating on price-per-token and latency rather than benchmark scores alone.",
+         "category": "Enterprise", "link": "https://news.ycombinator.com"},
+        {"headline": "AI Talent Acquisition Drives a Wave of Acquihires Among Smaller Labs",
+         "summary": "Larger labs are increasingly acquiring small research teams primarily for talent rather than product, reshaping the competitive landscape.",
+         "category": "Funding", "link": "https://news.ycombinator.com"},
     ]
+    market_industry = dynamic_market if dynamic_market else _pick_rotated(fallback_market_pool, 2)
 
-    # 8. Quick Takes
-    quick_takes = [
+    # 8. Quick Takes — rotated daily from a larger pool.
+    quick_takes_pool = [
         {"topic": "No-Code Agent Builders",
          "opinion": "Excellent for demos and rapid prototyping, but reliably deploying complex enterprise workflows through drag-and-drop nodes remains brittle. Production use still requires code-level control over error handling, retry logic, and state management.",
          "hype_level": "Overhyped"},
         {"topic": "Small, Locally Hosted Language Models (3B–8B)",
          "opinion": "Dramatically underrated for structured, domain-specific tasks. Models in this range running on consumer hardware can match much larger cloud models on narrow workloads while offering full data privacy and near-zero marginal cost per request.",
-         "hype_level": "Underrated"}
+         "hype_level": "Underrated"},
+        {"topic": "AI-Generated Code Review Comments",
+         "opinion": "Useful for catching style nits and obvious bugs, but still misses architectural issues a senior reviewer would flag immediately. Treat it as a first pass, not a replacement for human review.",
+         "hype_level": "Emerging"},
+        {"topic": "Multi-Agent Systems for Everyday Tasks",
+         "opinion": "Most real-world problems don't need five coordinating agents — a single well-prompted agent with good tools solves 90% of cases with far less failure surface.",
+         "hype_level": "Overhyped"},
+        {"topic": "Fine-Tuning Over Prompting for Narrow Tasks",
+         "opinion": "Still underused. Teams default to ever-larger prompts when a small fine-tuned model on a narrow task would be cheaper, faster, and more consistent.",
+         "hype_level": "Underrated"},
+        {"topic": "AI Browser Agents",
+         "opinion": "Impressive in demos, but reliability on real-world sites with logins, CAPTCHAs, and dynamic layouts is still far behind what's needed for unattended production use.",
+         "hype_level": "Emerging"},
     ]
+    quick_takes = _pick_rotated(quick_takes_pool, 2)
 
-    # 9. What to Watch
-    what_to_watch = [
+    # 9. What to Watch — rotated daily from a larger pool.
+    watch_pool = [
         {"item": "Next-Generation Open-Source Multimodal Models",
          "details": "Several major open-weight developers are expected to release models with strong vision-language capabilities competitive with proprietary offerings."},
         {"item": "Stateful Long-Horizon Agent Benchmarks",
-         "details": "New evaluation frameworks designed to test agent performance over hundreds of sequential steps — rather than single-turn completions — are expected from leading AI safety labs."}
+         "details": "New evaluation frameworks designed to test agent performance over hundreds of sequential steps — rather than single-turn completions — are expected from leading AI safety labs."},
+        {"item": "On-Device Inference for Mid-Sized Models",
+         "details": "Chip and framework improvements are pushing 7B-13B class models toward practical on-device deployment on phones and laptops, not just servers."},
+        {"item": "Standardized Agent-to-Agent Communication Protocols",
+         "details": "As multi-agent systems proliferate, expect more pressure toward shared protocols for agent handoff and tool-calling instead of bespoke integrations per framework."},
     ]
+    what_to_watch = _pick_rotated(watch_pool, 2)
 
     return {
         "date": date_str,
@@ -411,7 +520,7 @@ def generate_digest(db_path, date_str, api_key=None):
         
     if not api_key:
         # Run intelligent offline fallback
-        digest_dict = run_offline_fallback(date_str, raw_items)
+        digest_dict = run_offline_fallback(date_str, raw_items, past_items)
         save_digest(db_path, date_str, digest_dict)
         return digest_dict, "offline_fallback"
         
