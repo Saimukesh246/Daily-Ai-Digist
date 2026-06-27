@@ -9,10 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# SQLite data directory — mount a persistent volume here
-ENV DATA_DIR=/app/data
+# Persistence is external (Supabase Postgres via DATABASE_URL) — no local data dir needed.
 ENV HOST=0.0.0.0
-RUN mkdir -p /app/data
 
 EXPOSE 8000
 
