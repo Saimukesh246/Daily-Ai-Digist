@@ -62,21 +62,21 @@ def fetch_reddit_ai(subreddits=None, limit=10):
     logger.info("Fetching Reddit AI topics via PullPush mirror...")
     if not subreddits:
         subreddits = ["MachineLearning", "singularity", "ArtificialInteligence"]
-    articles = []
 
-    for sub in subreddits:
+    def _fetch_one_subreddit(sub):
         url = (
             f"https://api.pullpush.io/reddit/search/submission/"
             f"?subreddit={sub}&size={limit}&sort=desc&sort_type=created_utc"
         )
         response = safe_request(url)
+        items = []
         if response:
             try:
                 posts = response.json().get("data", [])
                 for post in posts:
                     if post.get("stickied") or post.get("over_18"):
                         continue
-                    title    = post.get("title", "").strip()
+                    title = post.get("title", "").strip()
                     if not title:
                         continue
                     permalink = post.get("permalink", "")
@@ -91,7 +91,7 @@ def fetch_reddit_ai(subreddits=None, limit=10):
                     else:
                         desc = f"[r/{sub}] {desc} | Score: {score} | Comments: {comments}"
 
-                    articles.append({
+                    items.append({
                         "source": "Reddit",
                         "title": title,
                         "description": desc,
@@ -100,6 +100,13 @@ def fetch_reddit_ai(subreddits=None, limit=10):
                     })
             except Exception as e:
                 logger.error(f"Error parsing PullPush response for r/{sub}: {e}")
+        return items
+
+    from concurrent.futures import ThreadPoolExecutor
+    articles = []
+    with ThreadPoolExecutor(max_workers=len(subreddits) or 1) as executor:
+        for items in executor.map(_fetch_one_subreddit, subreddits):
+            articles.extend(items)
     return articles
 
 def fetch_huggingface_papers(limit=15):
@@ -292,41 +299,43 @@ def fetch_anthropic_custom_scrape(url, name="Anthropic Blog"):
     return articles
 
 
+def _fetch_one_dynamic_source(src):
+    """Fetches a single dynamic source. Isolated so it can run in a worker thread —
+    each source is an independent HTTP round-trip, so fetching ~25+ of them
+    sequentially was the single biggest contributor to slow syncs."""
+    name = src["name"]
+    url = src["url"]
+    stype = src["source_type"]
+    try:
+        if stype == "rss":
+            return fetch_custom_rss(url, name, limit=10, category="news")
+        elif stype == "scrape":
+            if "anthropic.com" in url.lower():
+                return fetch_anthropic_custom_scrape(url, name)
+            return fetch_custom_rss(url, name, limit=10, category="news")
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching dynamic source {name} ({url}): {e}")
+        return []
+
+
 def fetch_lab_blogs(db_path=None):
-    """Fetches news updates dynamically from active database-defined sources."""
+    """Fetches news updates dynamically from active database-defined sources,
+    in parallel across a thread pool since each is an independent network call."""
     logger.info("Fetching dynamic blog and news sources...")
     import database
+    from concurrent.futures import ThreadPoolExecutor
+
     if not db_path:
         db_path = database.DEFAULT_DB_PATH
-        
-    sources = database.get_sources(db_path)
+
+    sources = [s for s in database.get_sources(db_path) if s.get("enabled", 1)]
     articles = []
-    
-    for src in sources:
-        if not src.get("enabled", 1):
-            continue
-            
-        name = src["name"]
-        url = src["url"]
-        stype = src["source_type"]
-        
-        try:
-            if stype == "rss":
-                # Fetch as standard RSS
-                items = fetch_custom_rss(url, name, limit=10, category="news")
-                articles.extend(items)
-            elif stype == "scrape":
-                # If Anthropic, use its special scraping logic
-                if "anthropic.com" in url.lower():
-                    items = fetch_anthropic_custom_scrape(url, name)
-                    articles.extend(items)
-                else:
-                    # Generic scraping fallback (discovers RSS or parses HTML page links)
-                    items = fetch_custom_rss(url, name, limit=10, category="news")
-                    articles.extend(items)
-        except Exception as e:
-            logger.error(f"Error fetching dynamic source {name} ({url}): {e}")
-            
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        for result in executor.map(_fetch_one_dynamic_source, sources):
+            articles.extend(result)
+
     return articles
 
 

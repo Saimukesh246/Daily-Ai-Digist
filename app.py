@@ -261,73 +261,71 @@ def run_sync_job(date_str):
 
         cfg = database.get_scraper_config(DB_PATH)
 
+        # All sources are independent network calls — fetch them concurrently
+        # instead of one after another. This was the largest contributor to
+        # slow syncs (lab_blogs alone hits ~25+ feeds; doing all 7 sources
+        # sequentially could take minutes).
         hn_cfg = cfg.get("hacker_news", {})
+        rd_cfg = cfg.get("reddit", {})
+        hf_cfg = cfg.get("huggingface", {})
+        ax_cfg = cfg.get("arxiv", {})
+        gh_cfg = cfg.get("github", {})
+        ph_cfg = cfg.get("product_hunt", {})
+        lb_cfg = cfg.get("lab_blogs", {})
+
+        jobs = {}
         if hn_cfg.get("enabled", True):
-            add_log("Crawling Hacker News AI stories (last 36 hours)...")
-            hn_items = fetcher.fetch_hacker_news_ai(date_str, limit=hn_cfg.get("limit", 20))
-            add_log(f"-> Hacker News: Found {len(hn_items)} articles.")
-            all_items = hn_items
+            jobs["Hacker News"] = lambda: fetcher.fetch_hacker_news_ai(date_str, limit=hn_cfg.get("limit", 20))
         else:
             add_log("-> Hacker News: Skipped (disabled).")
-            all_items = []
 
-        rd_cfg = cfg.get("reddit", {})
         if rd_cfg.get("enabled", True):
             subs = rd_cfg.get("subreddits", ["MachineLearning", "singularity", "ArtificialIntelligence"])
-            add_log(f"Crawling Reddit AI subreddits ({', '.join(f'r/{s}' for s in subs)})...")
-            reddit_items = fetcher.fetch_reddit_ai(subreddits=subs, limit=rd_cfg.get("limit", 10))
-            add_log(f"-> Reddit: Found {len(reddit_items)} posts.")
-            all_items.extend(reddit_items)
+            jobs["Reddit"] = lambda: fetcher.fetch_reddit_ai(subreddits=subs, limit=rd_cfg.get("limit", 10))
         else:
             add_log("-> Reddit: Skipped (disabled).")
 
-        hf_cfg = cfg.get("huggingface", {})
         if hf_cfg.get("enabled", True):
-            add_log("Crawling Hugging Face daily paper API...")
-            hf_items = fetcher.fetch_huggingface_papers(limit=hf_cfg.get("limit", 15))
-            add_log(f"-> Hugging Face: Found {len(hf_items)} papers.")
-            all_items.extend(hf_items)
+            jobs["Hugging Face"] = lambda: fetcher.fetch_huggingface_papers(limit=hf_cfg.get("limit", 15))
         else:
             add_log("-> Hugging Face: Skipped (disabled).")
 
-        ax_cfg = cfg.get("arxiv", {})
         if ax_cfg.get("enabled", True):
-            add_log("Crawling Arxiv CS.AI XML feed...")
-            arxiv_items = fetcher.fetch_arxiv_ai(limit=ax_cfg.get("limit", 15))
-            add_log(f"-> Arxiv: Found {len(arxiv_items)} preprints.")
-            all_items.extend(arxiv_items)
+            jobs["Arxiv"] = lambda: fetcher.fetch_arxiv_ai(limit=ax_cfg.get("limit", 15))
         else:
             add_log("-> Arxiv: Skipped (disabled).")
 
-        gh_cfg = cfg.get("github", {})
         if gh_cfg.get("enabled", True):
-            add_log("Crawling GitHub API for trending AI repositories...")
-            github_items = fetcher.fetch_github_trending(
-                keywords=gh_cfg.get("keywords"),
-                limit=gh_cfg.get("limit", 15)
+            jobs["GitHub Trending"] = lambda: fetcher.fetch_github_trending(
+                keywords=gh_cfg.get("keywords"), limit=gh_cfg.get("limit", 15)
             )
-            add_log(f"-> GitHub Trending: Found {len(github_items)} repositories.")
-            all_items.extend(github_items)
         else:
             add_log("-> GitHub Trending: Skipped (disabled).")
 
-        ph_cfg = cfg.get("product_hunt", {})
         if ph_cfg.get("enabled", True):
-            add_log("Crawling Product Hunt tech launch RSS feed...")
-            ph_items = fetcher.fetch_product_hunt_ai()
-            add_log(f"-> Product Hunt: Found {len(ph_items)} launches.")
-            all_items.extend(ph_items)
+            jobs["Product Hunt"] = lambda: fetcher.fetch_product_hunt_ai()
         else:
             add_log("-> Product Hunt: Skipped (disabled).")
 
-        lb_cfg = cfg.get("lab_blogs", {})
         if lb_cfg.get("enabled", True):
-            add_log("Crawling AI Lab blogs (OpenAI, DeepMind, Anthropic)...")
-            lab_items = fetcher.fetch_lab_blogs()
-            add_log(f"-> Lab Blogs: Found {len(lab_items)} articles.")
-            all_items.extend(lab_items)
+            jobs["Lab Blogs"] = lambda: fetcher.fetch_lab_blogs()
         else:
             add_log("-> Lab Blogs: Skipped (disabled).")
+
+        add_log(f"Crawling {len(jobs)} sources in parallel...")
+        all_items = []
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=max(len(jobs), 1)) as executor:
+            future_to_name = {executor.submit(fn): name for name, fn in jobs.items()}
+            for future in as_completed(future_to_name):
+                name = future_to_name[future]
+                try:
+                    items = future.result()
+                except Exception as e:
+                    logger.error(f"Error fetching {name}: {e}")
+                    items = []
+                add_log(f"-> {name}: Found {len(items)} items.")
+                all_items.extend(items)
 
         unique_items = []
         seen_urls    = set()
