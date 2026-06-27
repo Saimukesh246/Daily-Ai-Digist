@@ -239,14 +239,13 @@ def run_offline_fallback(date_str, raw_items, past_items=None):
     # 1. Trend Overview
     trend_title, trend_p1, trend_p2 = _derive_trend()
 
-    # 2. Biggest News Today
-    default_news = [
-        {"title": "Anthropic publishes new research on LLM interpretability", "url": "https://www.anthropic.com/news", "source": "Anthropic Blog",
-         "description": "New mechanistic interpretability research maps abstract concepts to individual neuron clusters inside transformer models using dictionary learning techniques."},
-        {"title": "OpenAI announces updated developer tooling for agent workflows", "url": "https://openai.com/news", "source": "OpenAI Blog",
-         "description": "Updates to the Assistants API introduce parallel tool calling, improved structured output guarantees, and new lifecycle management endpoints."}
-    ]
-    selected_news = news_items[:3] if len(news_items) >= 2 else default_news
+    # 2. Biggest News Today — always real scraped items, never canned placeholders.
+    # If fewer than 3 news-category items came in today, top up with whatever else
+    # was crawled (tools/papers/repos) rather than injecting fake headlines.
+    selected_news = news_items[:3]
+    if len(selected_news) < 3:
+        backfill = [it for it in raw_items if it not in selected_news]
+        selected_news += backfill[: 3 - len(selected_news)]
     biggest_news = []
     seen_why_it_matters = set()
     for item in selected_news:
@@ -267,13 +266,10 @@ def run_offline_fallback(date_str, raw_items, past_items=None):
             "link": item["url"]
         })
 
-    # 3. New Tools Discovered
+    # 3. New Tools Discovered — real tool items, topped up with repos if thin.
+    # No fake placeholder tools when today's actual crawl came up short.
     cats = ["AI Agents", "Developer Tools", "Coding Assistants", "Automation Tools", "Productivity AI", "Security Tools"]
-    default_tools = [
-        {"title": "AgentOps", "description": "Observability and evaluation platform for AI agents with session replay and cost tracking.", "url": "https://github.com/AgentOps-AI/agentops", "category": "tool"},
-        {"title": "Phidata", "description": "Framework for building AI Assistants with persistent memory, knowledge bases, and tool use.", "url": "https://github.com/phidatahq/phidata", "category": "tool"}
-    ]
-    selected_tools = tool_items[:5] if len(tool_items) >= 2 else (repo_items[:3] + default_tools)
+    selected_tools = (tool_items + repo_items)[:6]
     discovered_tools = []
     for i, item in enumerate(selected_tools[:6]):
         desc = (item.get("description") or "")
@@ -400,17 +396,8 @@ def run_offline_fallback(date_str, raw_items, past_items=None):
             "why_it_matters": _why_research(item),
             "link": item["url"]
         })
-    if not open_source_research:
-        open_source_research = [
-            {"title": "KAN: Kolmogorov-Arnold Networks", "category": "Research Paper",
-             "summary": "An alternative to MLPs where learnable activation functions sit on edges rather than nodes, improving accuracy and mathematical interpretability.",
-             "why_it_matters": "Could reshape neural architecture design, particularly for scientific computing tasks requiring interpretable models.",
-             "link": "https://arxiv.org/abs/2404.19756"},
-            {"title": "llama.cpp", "category": "Repository",
-             "summary": "C/C++ port of Llama and compatible models enabling efficient local inference on consumer CPUs and Apple Silicon without a GPU.",
-             "why_it_matters": "Core infrastructure powering the local open-source AI movement — essential for anyone building offline-first AI features.",
-             "link": "https://github.com/ggerganov/llama.cpp"}
-        ]
+    # No hardcoded fallback here — if nothing was crawled today, the section
+    # is genuinely empty rather than showing the same two canned examples.
 
     # 7. Market Movements — prefer real scraped items with funding/enterprise signal.
     market_signal_words = ["fund", "invest", "acqui", "ipo", "valuation", "raise",
