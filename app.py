@@ -14,6 +14,10 @@ from typing import Optional
 
 import requests as _requests
 from bs4 import BeautifulSoup as _BeautifulSoup
+from urllib.parse import urlparse as _urlparse, urljoin as _urljoin_for_redirect
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Load .env file if present
 try:
@@ -29,6 +33,10 @@ try:
 except ImportError:
     BCRYPT_AVAILABLE = False
     _bcrypt = None
+    logging.getLogger("app").warning(
+        "bcrypt is not installed — falling back to unsalted SHA-256 for password "
+        "hashing. This is significantly weaker; install bcrypt as soon as possible."
+    )
 
 import database
 import fetcher
@@ -49,6 +57,11 @@ async def lifespan(app_instance: "FastAPI"):
 
 # Initialize FastAPI application
 app = FastAPI(title="Daily AI Digest Server", version="1.0.0", lifespan=lifespan)
+
+# Rate limiting — guards login/register against brute force & credential stuffing
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Setup folder directories
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -106,6 +119,27 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def generate_token() -> str:
     return secrets.token_urlsafe(48)
+
+
+def assert_public_http_url(url: str):
+    """Raises ValueError if the URL isn't http(s) or resolves to a private/internal/
+    loopback/link-local address. Prevents SSRF when the server fetches a user- or
+    admin-supplied URL on the caller's behalf (og-image proxy, source validation)."""
+    import socket
+    import ipaddress
+    parsed = _urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("Only http/https URLs are allowed.")
+    if not parsed.hostname:
+        raise ValueError("URL has no hostname.")
+    try:
+        addrinfos = socket.getaddrinfo(parsed.hostname, None)
+    except socket.gaierror:
+        raise ValueError("Could not resolve hostname.")
+    for *_rest, sockaddr in addrinfos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise ValueError("URL resolves to a non-public address.")
 
 
 def get_smtp_settings() -> dict:
@@ -355,6 +389,7 @@ async def serve_dashboard():
 # ---------------------------------------------------------------------------
 
 @app.post("/api/auth/register")
+@limiter.limit("5/minute")
 async def register(payload: RegisterPayload, request: Request):
     """Register a new user with email + password."""
     import re
@@ -397,6 +432,7 @@ async def register(payload: RegisterPayload, request: Request):
 
 
 @app.post("/api/auth/login")
+@limiter.limit("10/minute")
 async def login(payload: LoginPayload, request: Request):
     """Login with email + password."""
     email = payload.email.strip().lower()
@@ -556,8 +592,17 @@ async def get_og_image(url: str, _user: dict = Depends(require_auth)):
     result = {"image_url": "", "title": ""}
     try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; AiDigestBot/1.0)"}
-        resp    = _requests.get(url, headers=headers, timeout=6, allow_redirects=True)
-        soup    = _BeautifulSoup(resp.text, "html.parser")
+        next_url = url
+        # Validate and follow redirects manually (each hop re-checked) so a redirect
+        # can't be used to bypass the SSRF guard after the initial URL passes it.
+        for _ in range(5):
+            assert_public_http_url(next_url)
+            resp = _requests.get(next_url, headers=headers, timeout=6, allow_redirects=False)
+            if resp.is_redirect and resp.headers.get("Location"):
+                next_url = _urljoin_for_redirect(next_url, resp.headers["Location"])
+                continue
+            break
+        soup = _BeautifulSoup(resp.text, "html.parser")
         for attr, val in [("property", "og:image"), ("name", "twitter:image"), ("property", "twitter:image")]:
             tag = soup.find("meta", {attr: val})
             if tag and tag.get("content"):
@@ -714,6 +759,7 @@ def validate_source_endpoint(url: str, source_type: str):
     import requests
     from bs4 import BeautifulSoup
     try:
+        assert_public_http_url(url)
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code != 200:
@@ -734,6 +780,7 @@ def validate_source_endpoint(url: str, source_type: str):
                 if rss_link:
                     import urllib.parse
                     resolved = urllib.parse.urljoin(url, rss_link)
+                    assert_public_http_url(resolved)
                     resp_rss = requests.get(resolved, headers=headers, timeout=10)
                     if resp_rss.status_code == 200:
                         try:

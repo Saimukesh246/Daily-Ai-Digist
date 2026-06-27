@@ -10,6 +10,30 @@
 const AUTH_KEY = "aid_session_token";
 const USER_KEY = "aid_user_info";
 
+/** Escapes HTML-significant characters so untrusted content (scraped article
+ *  text, user-entered names, etc.) can't break out of markup when interpolated
+ *  into innerHTML templates. Safe to use inside both text and attribute positions
+ *  (as long as attributes are double-quoted). */
+function escapeHtml(value) {
+    if (value === null || value === undefined) return "";
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+/** Returns the URL unchanged if it's http(s), otherwise "#" — blocks
+ *  javascript:/data: URIs that scraped content could otherwise smuggle into href/src. */
+function safeUrl(url) {
+    try {
+        const u = new URL(url, window.location.href);
+        if (u.protocol === "http:" || u.protocol === "https:") return u.href;
+    } catch (e) { /* fall through */ }
+    return "#";
+}
+
 function getToken() { return localStorage.getItem(AUTH_KEY); }
 function getUser()  { try { return JSON.parse(localStorage.getItem(USER_KEY) || "null"); } catch { return null; } }
 function saveAuth(token, user) {
@@ -374,11 +398,11 @@ function updateUserPill(user) {
 
     if (avatarEl) {
         if (user.avatar_url) {
-            avatarEl.innerHTML = `<img src="${user.avatar_url}" alt="${displayName}" onerror="this.parentElement.innerHTML='<i class=\'fa-solid fa-user\'></i>'">`;
+            avatarEl.innerHTML = `<img src="${escapeHtml(safeUrl(user.avatar_url))}" alt="${escapeHtml(displayName)}" onerror="this.parentElement.innerHTML='<i class=\'fa-solid fa-user\'></i>'">`;
         } else {
             // Use first letter as avatar
             const initials = displayName.charAt(0).toUpperCase();
-            avatarEl.innerHTML = `<span style="font-size:14px;font-weight:700;">${initials}</span>`;
+            avatarEl.innerHTML = `<span style="font-size:14px;font-weight:700;">${escapeHtml(initials)}</span>`;
         }
     }
 }
@@ -574,7 +598,7 @@ function bootDashboard() {
                 if (date === activeDate) li.classList.add("active");
                 
                 li.innerHTML = `
-                    <span>${date}</span>
+                    <span>${escapeHtml(date)}</span>
                     <i class="fa-solid fa-chevron-right item-icon"></i>
                 `;
                 li.addEventListener("click", () => {
@@ -623,7 +647,7 @@ function bootDashboard() {
         // Render 0: Hero trend
         editorialTrendTitle.textContent = content.editorial_trend.title;
         editorialTrendParagraphs.innerHTML = content.editorial_trend.paragraphs
-            .map(para => `<p>${para}</p>`)
+            .map(para => `<p>${escapeHtml(para)}</p>`)
             .join("");
             
         // Render 1: Biggest News Grid
@@ -635,45 +659,46 @@ function bootDashboard() {
             const gradClass  = THUMB_GRADS[idx % THUMB_GRADS.length];
             const favicon    = faviconFor(news.link);
             const domain     = domainLabel(news.link);
+            const linkUrl    = safeUrl(news.link);
             const faviconImg = favicon
-                ? `<img src="${favicon}" onerror="this.style.display='none'" alt="">`
+                ? `<img src="${escapeHtml(favicon)}" onerror="this.style.display='none'" alt="">`
                 : `<i class="fa-solid fa-globe" style="font-size:11px;opacity:0.5;"></i>`;
 
             const featuresHtml = news.key_features && news.key_features.length > 0
                 ? `<ul class="news-features-list">
-                    ${news.key_features.map(f => `<li><i class="fa-solid fa-caret-right"></i> ${f}</li>`).join("")}
+                    ${news.key_features.map(f => `<li><i class="fa-solid fa-caret-right"></i> ${escapeHtml(f)}</li>`).join("")}
                    </ul>`
                 : "";
 
             const alreadySaved = bookmarkedUrls.has(news.link);
             card.innerHTML = `
                 <div class="news-card-thumb ${gradClass}" style="position:relative;">
-                    <button class="btn-bookmark ${alreadySaved ? "bookmarked" : ""}" data-url="${news.link}"
+                    <button class="btn-bookmark ${alreadySaved ? "bookmarked" : ""}" data-url="${escapeHtml(news.link)}"
                         title="${alreadySaved ? "Remove bookmark" : "Save to Reading List"}">
                         <i class="fa-${alreadySaved ? "solid" : "regular"} fa-bookmark"></i>
                     </button>
                     <i class="fa-regular fa-newspaper news-thumb-icon"></i>
                     <div class="news-thumb-source">
                         ${faviconImg}
-                        <span>${domain}</span>
+                        <span>${escapeHtml(domain)}</span>
                     </div>
                 </div>
                 <div class="news-card-body">
                     <div class="news-card-header">
-                        <h4 class="news-headline">${news.headline}</h4>
+                        <h4 class="news-headline">${escapeHtml(news.headline)}</h4>
                         <span class="badge badge-source">TOP STORY</span>
                     </div>
-                    <p class="news-summary">${news.summary}</p>
+                    <p class="news-summary">${escapeHtml(news.summary)}</p>
                     <div class="news-meta-block">
                         <strong>WHY IT MATTERS:</strong>
-                        ${news.why_it_matters}
+                        ${escapeHtml(news.why_it_matters)}
                     </div>
                     ${featuresHtml}
                     <div class="news-footer">
                         <div class="who-cares-badge">
-                            <span>Impact:</span> ${news.who_should_care}
+                            <span>Impact:</span> ${escapeHtml(news.who_should_care)}
                         </div>
-                        <a href="${news.link}" target="_blank" class="btn-link-action">
+                        <a href="${escapeHtml(linkUrl)}" target="_blank" class="btn-link-action">
                             Read Source <i class="fa-solid fa-arrow-up-right-from-square"></i>
                         </a>
                     </div>
@@ -701,21 +726,21 @@ function bootDashboard() {
             const row     = document.createElement("tr");
             const favicon = faviconFor(tool.link);
             const favImg  = favicon
-                ? `<img src="${favicon}" class="tool-favicon" onerror="this.style.display='none'" alt="">`
+                ? `<img src="${escapeHtml(favicon)}" class="tool-favicon" onerror="this.style.display='none'" alt="">`
                 : "";
             row.innerHTML = `
                 <td class="tool-name-container">
                     <div class="tool-name-with-favicon">
                         ${favImg}
-                        <span>${tool.tool}</span>
+                        <span>${escapeHtml(tool.tool)}</span>
                     </div>
                 </td>
-                <td><span class="badge badge-category">${tool.category}</span></td>
-                <td>${tool.what_it_does}</td>
-                <td>${tool.why_it_matters}</td>
-                <td><span class="pricing-tag">${tool.pricing}</span></td>
+                <td><span class="badge badge-category">${escapeHtml(tool.category)}</span></td>
+                <td>${escapeHtml(tool.what_it_does)}</td>
+                <td>${escapeHtml(tool.why_it_matters)}</td>
+                <td><span class="pricing-tag">${escapeHtml(tool.pricing)}</span></td>
                 <td>
-                    <a href="${tool.link}" target="_blank" class="btn btn-secondary" style="width:auto;padding:6px 12px;font-size:12px;">
+                    <a href="${escapeHtml(safeUrl(tool.link))}" target="_blank" class="btn btn-secondary" style="width:auto;padding:6px 12px;font-size:12px;">
                         Explore <i class="fa-solid fa-external-link" style="font-size:10px;"></i>
                     </a>
                 </td>
@@ -728,10 +753,10 @@ function bootDashboard() {
         content.what_changed.forEach((change) => {
             const row = document.createElement("tr");
             row.innerHTML = `
-                <td class="tool-name-container">${change.tool_or_company}</td>
-                <td><span style="color: var(--color-text-muted); text-decoration: line-through;">${change.yesterday}</span></td>
-                <td><span style="color: var(--accent-cyan); font-weight: 500;"><i class="fa-solid fa-arrow-trend-up"></i> ${change.today}</span></td>
-                <td>${change.why_it_matters}</td>
+                <td class="tool-name-container">${escapeHtml(change.tool_or_company)}</td>
+                <td><span style="color: var(--color-text-muted); text-decoration: line-through;">${escapeHtml(change.yesterday)}</span></td>
+                <td><span style="color: var(--accent-cyan); font-weight: 500;"><i class="fa-solid fa-arrow-trend-up"></i> ${escapeHtml(change.today)}</span></td>
+                <td>${escapeHtml(change.why_it_matters)}</td>
             `;
             changesTableBody.appendChild(row);
         });
@@ -750,19 +775,19 @@ function bootDashboard() {
             const stepsHtml = wf.steps && wf.steps.length > 0
                 ? `<ul class="workflow-steps-list">
                     ${wf.steps.map((step, idx) => `
-                        <li><span class="step-num">${idx + 1}</span> ${step}</li>
+                        <li><span class="step-num">${idx + 1}</span> ${escapeHtml(step)}</li>
                     `).join("")}
                    </ul>`
                 : "";
 
             card.innerHTML = `
                 <div class="workflow-header">
-                    <h4>${wf.title}</h4>
-                    <span class="difficulty-badge ${diffClass}">${wf.difficulty}</span>
+                    <h4>${escapeHtml(wf.title)}</h4>
+                    <span class="difficulty-badge ${diffClass}">${escapeHtml(wf.difficulty)}</span>
                 </div>
                 <div class="workflow-field">
                     <strong>Problem Solved</strong>
-                    ${wf.problem_solved}
+                    ${escapeHtml(wf.problem_solved)}
                 </div>
                 <div class="workflow-field">
                     <strong>Workflow Execution Plan</strong>
@@ -770,11 +795,11 @@ function bootDashboard() {
                 </div>
                 <div class="workflow-field">
                     <strong>Business Value</strong>
-                    ${wf.business_value}
+                    ${escapeHtml(wf.business_value)}
                 </div>
                 <div class="workflow-field" style="margin-top: auto; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.03);">
                     <strong>Tools deployed</strong>
-                    <span style="color: var(--accent-cyan); font-size: 12px; font-family: monospace;">${wf.tools_used}</span>
+                    <span style="color: var(--accent-cyan); font-size: 12px; font-family: monospace;">${escapeHtml(wf.tools_used)}</span>
                 </div>
             `;
             workflowsGridContainer.appendChild(card);
@@ -797,16 +822,16 @@ function bootDashboard() {
                 </div>
                 <div class="research-card-body">
                     <div class="research-header">
-                        <h4 class="research-title">${item.title}</h4>
-                        <span class="badge ${badgeType}">${item.category}</span>
+                        <h4 class="research-title">${escapeHtml(item.title)}</h4>
+                        <span class="badge ${badgeType}">${escapeHtml(item.category)}</span>
                     </div>
-                    <p class="news-summary">${item.summary}</p>
+                    <p class="news-summary">${escapeHtml(item.summary)}</p>
                     <div class="news-meta-block" style="border-color:var(--accent-cyan);margin-top:auto;">
                         <strong>IMPACT ANALYSIS:</strong>
-                        ${item.why_it_matters}
+                        ${escapeHtml(item.why_it_matters)}
                     </div>
                     <div style="text-align:right;padding-top:5px;">
-                        <a href="${item.link}" target="_blank" class="btn-link-action" style="font-size:12px;">
+                        <a href="${escapeHtml(safeUrl(item.link))}" target="_blank" class="btn-link-action" style="font-size:12px;">
                             Link <i class="fa-solid fa-chevron-right"></i>
                         </a>
                     </div>
@@ -826,7 +851,7 @@ function bootDashboard() {
             const favicon    = faviconFor(item.link);
             const domain     = domainLabel(item.link);
             const faviconImg = favicon
-                ? `<img src="${favicon}" onerror="this.style.display='none'" alt="">`
+                ? `<img src="${escapeHtml(favicon)}" onerror="this.style.display='none'" alt="">`
                 : "";
 
             card.innerHTML = `
@@ -834,18 +859,18 @@ function bootDashboard() {
                     <i class="fa-solid fa-chart-line market-thumb-icon"></i>
                     <div class="market-source-badge">
                         ${faviconImg}
-                        <span>${domain}</span>
+                        <span>${escapeHtml(domain)}</span>
                     </div>
                 </div>
                 <div class="market-card-body">
                     <div class="market-meta">
-                        <span class="badge badge-category" style="font-size:9px;padding:2px 6px;">${item.category}</span>
-                        <a href="${item.link}" target="_blank" class="btn-link-action" style="font-size:11px;">
+                        <span class="badge badge-category" style="font-size:9px;padding:2px 6px;">${escapeHtml(item.category)}</span>
+                        <a href="${escapeHtml(safeUrl(item.link))}" target="_blank" class="btn-link-action" style="font-size:11px;">
                             Source <i class="fa-solid fa-xs fa-arrow-up-right-from-square"></i>
                         </a>
                     </div>
-                    <h4 class="market-headline">${item.headline}</h4>
-                    <p class="news-summary">${item.summary}</p>
+                    <h4 class="market-headline">${escapeHtml(item.headline)}</h4>
+                    <p class="news-summary">${escapeHtml(item.summary)}</p>
                 </div>
             `;
             marketGridContainer.appendChild(card);
@@ -864,10 +889,10 @@ function bootDashboard() {
             
             card.innerHTML = `
                 <div class="take-header">
-                    <span class="take-topic">${take.topic}</span>
-                    <span class="hype-meter ${hypeClass}">${take.hype_level}</span>
+                    <span class="take-topic">${escapeHtml(take.topic)}</span>
+                    <span class="hype-meter ${hypeClass}">${escapeHtml(take.hype_level)}</span>
                 </div>
-                <p class="take-opinion">${take.opinion}</p>
+                <p class="take-opinion">${escapeHtml(take.opinion)}</p>
             `;
             takesListContainer.appendChild(card);
         });
@@ -878,8 +903,8 @@ function bootDashboard() {
             const li = document.createElement("li");
             li.className = "watch-item";
             li.innerHTML = `
-                <div class="watch-title"><i class="fa-solid fa-circle-play"></i> ${watch.item}</div>
-                <p class="watch-details">${watch.details}</p>
+                <div class="watch-title"><i class="fa-solid fa-circle-play"></i> ${escapeHtml(watch.item)}</div>
+                <p class="watch-details">${escapeHtml(watch.details)}</p>
             `;
             watchListContainer.appendChild(li);
         });
@@ -930,7 +955,7 @@ function bootDashboard() {
             console.error(error);
             setStatusIndicator("error");
             hudStepText.textContent = `Error: ${error.message}`;
-            consoleLogsContainer.innerHTML += `<div class="log-error">[CRITICAL] Trigger failed: ${error.message}</div>`;
+            consoleLogsContainer.innerHTML += `<div class="log-error">[CRITICAL] Trigger failed: ${escapeHtml(error.message)}</div>`;
         }
     }
 
@@ -946,7 +971,7 @@ function bootDashboard() {
             consoleLogsContainer.innerHTML = data.logs
                 .map(log => {
                     const isErr = log.includes("ERROR") || log.includes("Failed");
-                    return `<div class="${isErr ? 'log-error' : ''}">${log}</div>`;
+                    return `<div class="${isErr ? 'log-error' : ''}">${escapeHtml(log)}</div>`;
                 })
                 .join("");
                 
@@ -1127,9 +1152,10 @@ function bootDashboard() {
     }
 
     function highlightMatch(text, query) {
-        if (!query || !text) return text || "";
-        const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        return text.replace(new RegExp(`(${escaped})`, "gi"), "<mark>$1</mark>");
+        const safeText = escapeHtml(text || "");
+        if (!query || !text) return safeText;
+        const escapedQuery = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return safeText.replace(new RegExp(`(${escapedQuery})`, "gi"), "<mark>$1</mark>");
     }
 
     function openSearch() {
@@ -1166,8 +1192,8 @@ function bootDashboard() {
             pill.className = `source-pill${source === activeSourceFilter ? " active" : ""}`;
             const favicon  = faviconForSource(source);
             pill.innerHTML = `
-                ${favicon ? `<img src="${favicon}" onerror="this.style.display='none'" alt="">` : ""}
-                ${source}
+                ${favicon ? `<img src="${escapeHtml(favicon)}" onerror="this.style.display='none'" alt="">` : ""}
+                ${escapeHtml(source)}
             `;
             pill.addEventListener("click", () => {
                 activeSourceFilter = activeSourceFilter === source ? "" : source;
@@ -1201,7 +1227,7 @@ function bootDashboard() {
             const data = await res.json();
 
             if (data.results.length === 0) {
-                const label = q ? `"${q}"` : activeSourceFilter;
+                const label = q ? `"${escapeHtml(q)}"` : escapeHtml(activeSourceFilter);
                 searchResults.innerHTML = `
                     <div class="search-empty">
                         <i class="fa-regular fa-face-frown" style="opacity:0.2;"></i>
@@ -1216,22 +1242,22 @@ function bootDashboard() {
             data.results.forEach(item => {
                 const a      = document.createElement("a");
                 a.className  = "search-result-item";
-                a.href       = item.url || "#";
+                a.href       = safeUrl(item.url || "#");
                 a.target     = "_blank";
                 a.rel        = "noopener noreferrer";
 
                 const fav    = faviconForSource(item.source) || faviconFor(item.url);
-                const favImg = fav ? `<img src="${fav}" class="search-result-favicon" onerror="this.style.display='none'" alt="">` : "";
+                const favImg = fav ? `<img src="${escapeHtml(fav)}" class="search-result-favicon" onerror="this.style.display='none'" alt="">` : "";
                 const desc   = item.description
                     ? `<div class="search-result-desc">${highlightMatch(item.description, q)}</div>` : "";
 
                 a.innerHTML = `
                     <div class="search-result-meta">
                         ${favImg}
-                        <span class="search-result-source">${item.source}</span>
+                        <span class="search-result-source">${escapeHtml(item.source)}</span>
                         <span class="search-result-dot">●</span>
-                        <span class="search-result-date">${item.date}</span>
-                        <span class="badge badge-category" style="font-size:9px;padding:2px 6px;margin-left:2px;">${item.category}</span>
+                        <span class="search-result-date">${escapeHtml(item.date)}</span>
+                        <span class="badge badge-category" style="font-size:9px;padding:2px 6px;margin-left:2px;">${escapeHtml(item.category)}</span>
                     </div>
                     <div class="search-result-title">${highlightMatch(item.title, q)}</div>
                     ${desc}
@@ -1405,10 +1431,10 @@ function bootDashboard() {
                 li.dataset.email = sub.email;
                 li.innerHTML = `
                     <div class="subscriber-info">
-                        <span class="subscriber-email">${sub.email}</span>
-                        ${sub.name ? `<span class="subscriber-name">${sub.name}</span>` : ""}
+                        <span class="subscriber-email">${escapeHtml(sub.email)}</span>
+                        ${sub.name ? `<span class="subscriber-name">${escapeHtml(sub.name)}</span>` : ""}
                     </div>
-                    <button class="btn-remove-subscriber" data-email="${sub.email}">
+                    <button class="btn-remove-subscriber" data-email="${escapeHtml(sub.email)}">
                         <i class="fa-solid fa-xmark"></i> Remove
                     </button>
                 `;
@@ -1611,16 +1637,16 @@ function bootDashboard() {
         row.dataset.userId = u.id;
 
         row.innerHTML = `
-            <div class="user-avatar-initial">${initial}</div>
+            <div class="user-avatar-initial">${escapeHtml(initial)}</div>
             <div class="user-info">
-                <span class="user-name">${u.name || "—"}
+                <span class="user-name">${escapeHtml(u.name || "—")}
                     ${isMe ? '<span class="user-you-badge">You</span>' : ""}
                 </span>
-                <span class="user-email">${u.email}</span>
+                <span class="user-email">${escapeHtml(u.email)}</span>
             </div>
             <span class="role-badge ${u.role}">${isAdmin ? "&#x1F451; Admin" : "&#x1F441; Viewer"}</span>
-            <span class="user-joined">${joined}</span>
-            ${!isMe ? `<button class="btn-toggle-role ${isAdmin ? "demote" : ""}" data-id="${u.id}" data-current="${u.role}">
+            <span class="user-joined">${escapeHtml(joined)}</span>
+            ${!isMe ? `<button class="btn-toggle-role ${isAdmin ? "demote" : ""}" data-id="${u.id}" data-current="${escapeHtml(u.role)}">
                 ${isAdmin ? "Make Viewer" : "Make Admin"}
             </button>` : ""}
         `;
@@ -1684,7 +1710,7 @@ function bootDashboard() {
         const span = document.createElement("span");
         span.className = "tag-chip";
         span.dataset.value = text;
-        span.innerHTML = `${text}<button type="button" class="tag-chip-remove" title="Remove"><i class="fa-solid fa-xmark"></i></button>`;
+        span.innerHTML = `${escapeHtml(text)}<button type="button" class="tag-chip-remove" title="Remove"><i class="fa-solid fa-xmark"></i></button>`;
         return span;
     }
 
@@ -1871,10 +1897,10 @@ function bootDashboard() {
                         <i class="fa-solid ${feed.source_type === 'rss' ? 'fa-square-rss' : 'fa-code'}"></i>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;">
-                        <span class="scraper-source-name" style="font-weight:600;font-size:14px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${feed.name}</span>
-                        <span class="settings-explanation" style="font-size:11px;color:var(--color-text-muted);word-break:break-all;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${feed.url}">${feed.url}</span>
+                        <span class="scraper-source-name" style="font-weight:600;font-size:14px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(feed.name)}</span>
+                        <span class="settings-explanation" style="font-size:11px;color:var(--color-text-muted);word-break:break-all;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(feed.url)}">${escapeHtml(feed.url)}</span>
                     </div>
-                    <span class="badge" style="font-size: 9px; padding: 2px 6px; margin-left: 12px; text-transform: uppercase; background: rgba(0, 240, 255, 0.05); color: var(--accent-cyan); border: 1px solid rgba(0,240,255,0.15); font-weight:600; flex-shrink:0;">${feed.source_type}</span>
+                    <span class="badge" style="font-size: 9px; padding: 2px 6px; margin-left: 12px; text-transform: uppercase; background: rgba(0, 240, 255, 0.05); color: var(--accent-cyan); border: 1px solid rgba(0,240,255,0.15); font-weight:600; flex-shrink:0;">${escapeHtml(feed.source_type)}</span>
                     
                     <div style="margin-left: auto; display: flex; align-items: center; gap: 12px; flex-shrink:0;">
                         <label class="toggle-switch-label" style="padding: 0; margin: 0; display:flex; align-items:center;">
@@ -2056,9 +2082,9 @@ function bootDashboard() {
             li.className  = "bookmark-item";
             li.dataset.url = b.url;
             li.innerHTML  = `
-                <a href="${b.url}" target="_blank" rel="noopener" class="bookmark-item-title">${b.title}</a>
-                <span class="bookmark-item-source">${b.source || b.digest_date || ""}</span>
-                <button class="btn-bookmark-remove" title="Remove bookmark" data-url="${b.url}">
+                <a href="${escapeHtml(safeUrl(b.url))}" target="_blank" rel="noopener" class="bookmark-item-title">${escapeHtml(b.title)}</a>
+                <span class="bookmark-item-source">${escapeHtml(b.source || b.digest_date || "")}</span>
+                <button class="btn-bookmark-remove" title="Remove bookmark" data-url="${escapeHtml(b.url)}">
                     <i class="fa-solid fa-xmark"></i>
                 </button>`;
             li.querySelector(".btn-bookmark-remove").addEventListener("click", async (e) => {

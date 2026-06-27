@@ -393,15 +393,12 @@ def generate_digest(db_path, date_str, api_key=None):
     if not raw_items:
         logger.warning(f"No raw articles found in database for date {date_str}. Running crawl inside generator as fallback...")
         from fetcher import fetch_all_sources
-        from database import save_raw_article
-        
+        from database import save_raw_articles_bulk
+
         raw_items = fetch_all_sources(date_str)
-        for item in raw_items:
-            save_raw_article(
-                db_path, date_str, item["source"], item["title"],
-                item["description"], item["url"], item["category"]
-            )
-            
+        save_raw_articles_bulk(db_path, date_str, raw_items)
+
+
     # If still no articles, get some recent history or compile empty list
     if not raw_items:
         logger.warning("No crawled items available at all. Relying on default dataset inside fallback compiler.")

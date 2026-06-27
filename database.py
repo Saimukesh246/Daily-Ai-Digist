@@ -835,8 +835,15 @@ def update_user_role(db_path, user_id, role):
         release_db_connection(conn)
 
 
+def _hash_token(token):
+    """Session tokens are high-entropy (secrets.token_urlsafe), so a fast hash is
+    enough — this just means a DB leak doesn't hand out live sessions directly."""
+    import hashlib
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def save_session(db_path, token, user_id, expires_hours=720):
-    """Stores a new session token. Default expiry: 30 days (720 hours)."""
+    """Stores a new session token (hashed). Default expiry: 30 days (720 hours)."""
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -849,7 +856,7 @@ def save_session(db_path, token, user_id, expires_hours=720):
             user_id = EXCLUDED.user_id,
             created_at = EXCLUDED.created_at,
             expires_at = EXCLUDED.expires_at
-        """, (token, user_id, created_at, expires_at))
+        """, (_hash_token(token), user_id, created_at, expires_at))
         conn.commit()
     finally:
         release_db_connection(conn)
@@ -860,7 +867,7 @@ def get_session(db_path, token):
     conn = get_db_connection()
     try:
         cursor = _dict_cursor(conn)
-        cursor.execute("SELECT * FROM sessions WHERE token = %s", (token,))
+        cursor.execute("SELECT * FROM sessions WHERE token = %s", (_hash_token(token),))
         row = cursor.fetchone()
         if not row:
             return None
@@ -883,7 +890,7 @@ def delete_session(db_path, token):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM sessions WHERE token = %s", (token,))
+        cursor.execute("DELETE FROM sessions WHERE token = %s", (_hash_token(token),))
         conn.commit()
     finally:
         release_db_connection(conn)
