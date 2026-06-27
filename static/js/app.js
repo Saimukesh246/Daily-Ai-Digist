@@ -577,14 +577,25 @@ function bootDashboard() {
     // --- API CORE COMMUNICATIONS ---
 
     // Load available dates in sidebar
+    // Monotonically increasing tokens so a slower, earlier-issued request can't
+    // overwrite the UI after a newer request has already resolved and rendered —
+    // without this, two overlapping loadDigestHistory()/loadDigest() calls (e.g.
+    // page-boot load racing a sync-complete reload) could show stale error state
+    // on top of correctly-rendered content.
+    let digestHistoryRequestSeq = 0;
+    let digestRequestSeq = 0;
+
     async function loadDigestHistory(selectLatest = true) {
+        const requestId = ++digestHistoryRequestSeq;
         try {
             const response = await apiFetch("/api/digests");
             if (!response.ok) throw new Error("Failed to load digest history.");
             const data = await response.json();
-            
+
+            if (requestId !== digestHistoryRequestSeq) return; // superseded by a newer call
+
             digestHistoryList.innerHTML = "";
-            
+
             if (data.dates.length === 0) {
                 digestHistoryList.innerHTML = `<li class="loading-placeholder">No digests generated yet. Click 'Sync Latest News' to start!</li>`;
                 // Show empty states
@@ -596,7 +607,7 @@ function bootDashboard() {
                 const li = document.createElement("li");
                 li.className = "digest-history-item";
                 if (date === activeDate) li.classList.add("active");
-                
+
                 li.innerHTML = `
                     <span>${escapeHtml(date)}</span>
                     <i class="fa-solid fa-chevron-right item-icon"></i>
@@ -617,6 +628,7 @@ function bootDashboard() {
                 loadDigest(activeDate);
             }
         } catch (error) {
+            if (requestId !== digestHistoryRequestSeq) return; // superseded by a newer call
             console.error(error);
             digestHistoryList.innerHTML = `<li class="loading-placeholder text-danger">Error loading history</li>`;
         }
@@ -624,16 +636,19 @@ function bootDashboard() {
 
     // Load detailed newsletter content for a specific date
     async function loadDigest(date) {
+        const requestId = ++digestRequestSeq;
         try {
             activeDate = date;
             digestDateLabel.textContent = `Daily AI Digest — Loading...`;
-            
+
             const response = await apiFetch(`/api/digests/${date}`);
             if (!response.ok) throw new Error(`Failed to load digest for date: ${date}`);
             const data = await response.json();
-            
+
+            if (requestId !== digestRequestSeq) return; // superseded by a newer call
             renderDigest(data.content);
         } catch (error) {
+            if (requestId !== digestRequestSeq) return; // superseded by a newer call
             console.error(error);
             digestDateLabel.textContent = `Error Loading Digest`;
         }
