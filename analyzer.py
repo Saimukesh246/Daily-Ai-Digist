@@ -654,15 +654,33 @@ RESPONSE SCHEMA:
 }}
 """
         
-        # We will use gemini-1.5-flash or gemini-2.5-flash.
-        # To be safe and compatible, let's use gemini-1.5-flash which is widely supported in the SDK
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        
-        response = model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"}
-        )
-        
+        # Model availability shifts over time as Google retires older versions —
+        # try newest-first and fall through to whichever one the key actually has
+        # access to, instead of hardcoding a single name that can silently 404.
+        candidate_models = [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-pro",
+        ]
+        response = None
+        last_error = None
+        for model_name in candidate_models:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(
+                    prompt,
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                logger.info(f"Gemini synthesis succeeded using model '{model_name}'.")
+                break
+            except Exception as model_err:
+                last_error = model_err
+                logger.warning(f"Gemini model '{model_name}' unavailable ({model_err}); trying next candidate...")
+        if response is None:
+            raise last_error or RuntimeError("No Gemini model candidates succeeded.")
+
         cleaned_json_text = clean_gemini_json(response.text)
         digest_dict = json.loads(cleaned_json_text)
         
