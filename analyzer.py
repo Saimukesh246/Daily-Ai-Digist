@@ -512,40 +512,57 @@ def generate_digest(db_path, date_str, api_key=None, previously_shown_titles=Non
         return digest_dict, "offline_fallback"
         
     # 3. If API Key exists, configure and invoke Gemini
-    logger.info("Configuring Google Generative AI SDK...")
     try:
-        genai.configure(api_key=api_key)
-        
-        # Prepare content payloads
-        today_summary_str = ""
-        for i, item in enumerate(raw_items):
-            today_summary_str += f"- [{item['category'].upper()}] Source: {item['source']} | Title: {item['title']} | Info: {item['description']} | Link: {item['url']}\n"
-            
-        past_summary_str = ""
-        for i, item in enumerate(past_items[:40]): # Top 40 items from last week
-            past_summary_str += f"- [{item['category'].upper()}] Date: {item['date']} | Title: {item['title']}\n"
+        digest_dict = synthesize_via_gemini(date_str, raw_items, past_items, api_key, previously_shown_titles)
+        save_digest(db_path, date_str, digest_dict)
+        logger.info("Successfully synthesized news via Gemini API!")
+        return digest_dict, "gemini_synthesis"
+    except Exception as e:
+        logger.error(f"Failed to generate digest via Gemini API: {e}. Falling back to offline mode...")
+        digest_dict = run_offline_fallback(date_str, raw_items)
+        save_digest(db_path, date_str, digest_dict)
+        return digest_dict, "offline_fallback_after_error"
 
-        rerun_note = ""
-        if previously_shown_titles:
-            titles_list = "\n".join(f"- {t}" for t in previously_shown_titles[:15])
-            rerun_note = (
-                f"\nIMPORTANT: A digest for {date_str} was already compiled earlier today and featured these "
-                f"items as the headline picks:\n{titles_list}\n"
-                "If today's raw logs contain other relevant stories/tools beyond these, prefer surfacing "
-                "DIFFERENT ones this time for variety. Only repeat an item above if it is genuinely the only "
-                "relevant option available.\n"
-            )
 
-        system_instruction = (
-            "You are an elite, premium AI technology analyst and veteran tech journalist (writing in the style of The Rundown AI, Ben's Bites, and TLDR AI). "
-            "Your job is to read raw aggregated AI logs from today (along with a brief history of the past 7 days) and write a highly polished, daily newsletter digest. "
-            "Your writing style must be exciting but factual, modern, highly readable, visually clean, beginner-friendly, and concise. "
-            "Do NOT include generic placeholders or hypothetical tools. Synthesize the ACTUAL raw logs provided. "
-            "You must return the digest in STRICT JSON FORMAT. Your output will be directly parsed by a JSON decoder, so do not include conversational fluff. "
-            "Ensure all URLs are preserved exactly as provided in the raw logs. Do not make up URLs."
+def synthesize_via_gemini(date_str, raw_items, past_items, api_key, previously_shown_titles=None):
+    """Calls Gemini to synthesize a digest from the given items. Raises on failure —
+    callers decide whether to fall back. Factored out of generate_digest so callers
+    (like a history-backfill script) can synthesize a digest for an arbitrary date
+    from an arbitrary item subset, without needing real historical scraped rows for
+    that date in raw_articles."""
+    logger.info("Configuring Google Generative AI SDK...")
+    genai.configure(api_key=api_key)
+
+    # Prepare content payloads
+    today_summary_str = ""
+    for i, item in enumerate(raw_items):
+        today_summary_str += f"- [{item['category'].upper()}] Source: {item['source']} | Title: {item['title']} | Info: {item['description']} | Link: {item['url']}\n"
+
+    past_summary_str = ""
+    for i, item in enumerate(past_items[:40]):  # Top 40 items from last week
+        past_summary_str += f"- [{item['category'].upper()}] Date: {item['date']} | Title: {item['title']}\n"
+
+    rerun_note = ""
+    if previously_shown_titles:
+        titles_list = "\n".join(f"- {t}" for t in previously_shown_titles[:15])
+        rerun_note = (
+            f"\nIMPORTANT: A digest for {date_str} was already compiled earlier today and featured these "
+            f"items as the headline picks:\n{titles_list}\n"
+            "If today's raw logs contain other relevant stories/tools beyond these, prefer surfacing "
+            "DIFFERENT ones this time for variety. Only repeat an item above if it is genuinely the only "
+            "relevant option available.\n"
         )
-        
-        prompt = f"""
+
+    system_instruction = (
+        "You are an elite, premium AI technology analyst and veteran tech journalist (writing in the style of The Rundown AI, Ben's Bites, and TLDR AI). "
+        "Your job is to read raw aggregated AI logs from today (along with a brief history of the past 7 days) and write a highly polished, daily newsletter digest. "
+        "Your writing style must be exciting but factual, modern, highly readable, visually clean, beginner-friendly, and concise. "
+        "Do NOT include generic placeholders or hypothetical tools. Synthesize the ACTUAL raw logs provided. "
+        "You must return the digest in STRICT JSON FORMAT. Your output will be directly parsed by a JSON decoder, so do not include conversational fluff. "
+        "Ensure all URLs are preserved exactly as provided in the raw logs. Do not make up URLs."
+    )
+
+    prompt = f"""
 Write a comprehensive, premium AI Digest for {date_str}.
 
 Here are today's crawled raw sources:
@@ -651,45 +668,33 @@ RESPONSE SCHEMA:
   ]
 }}
 """
-        
-        # Model availability shifts over time as Google retires older versions —
-        # try newest-first and fall through to whichever one the key actually has
-        # access to, instead of hardcoding a single name that can silently 404.
-        candidate_models = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-pro",
-        ]
-        response = None
-        last_error = None
-        for model_name in candidate_models:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(
-                    prompt,
-                    generation_config={"response_mime_type": "application/json"}
-                )
-                logger.info(f"Gemini synthesis succeeded using model '{model_name}'.")
-                break
-            except Exception as model_err:
-                last_error = model_err
-                logger.warning(f"Gemini model '{model_name}' unavailable ({model_err}); trying next candidate...")
-        if response is None:
-            raise last_error or RuntimeError("No Gemini model candidates succeeded.")
 
-        cleaned_json_text = clean_gemini_json(response.text)
-        digest_dict = json.loads(cleaned_json_text)
-        
-        # Save the structured digest
-        save_digest(db_path, date_str, digest_dict)
-        logger.info("Successfully synthesized news via Gemini API!")
-        return digest_dict, "gemini_synthesis"
-        
-    except Exception as e:
-        logger.error(f"Failed to generate digest via Gemini API: {e}. Falling back to offline mode...")
-        # Emergency fallback
-        digest_dict = run_offline_fallback(date_str, raw_items)
-        save_digest(db_path, date_str, digest_dict)
-        return digest_dict, "offline_fallback_after_error"
+    # Model availability shifts over time as Google retires older versions —
+    # try newest-first and fall through to whichever one the key actually has
+    # access to, instead of hardcoding a single name that can silently 404.
+    candidate_models = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-pro",
+    ]
+    response = None
+    last_error = None
+    for model_name in candidate_models:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(
+                prompt,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            logger.info(f"Gemini synthesis succeeded using model '{model_name}'.")
+            break
+        except Exception as model_err:
+            last_error = model_err
+            logger.warning(f"Gemini model '{model_name}' unavailable ({model_err}); trying next candidate...")
+    if response is None:
+        raise last_error or RuntimeError("No Gemini model candidates succeeded.")
+
+    cleaned_json_text = clean_gemini_json(response.text)
+    return json.loads(cleaned_json_text)
