@@ -300,16 +300,9 @@ def run_sync_job(date_str):
                 unique_items.append(item)
 
         add_log(f"Deduplication completed. Total unique entries: {len(unique_items)}")
-        add_log("Saving raw articles to local SQLite database...")
+        add_log("Saving raw articles to database...")
 
-        saved_count = 0
-        for item in unique_items:
-            saved = database.save_raw_article(
-                DB_PATH, date_str, item["source"], item["title"],
-                item["description"], item["url"], item["category"]
-            )
-            if saved:
-                saved_count += 1
+        saved_count = database.save_raw_articles_bulk(DB_PATH, date_str, unique_items)
         add_log(f"-> Saved {saved_count} new entries.")
 
         SYNC_STATUS["status"] = "analyzing"

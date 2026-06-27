@@ -203,6 +203,41 @@ def save_raw_article(db_path, date, source, title, description, url, category):
         release_db_connection(conn)
 
 
+def save_raw_articles_bulk(db_path, date, items):
+    """Saves many raw articles in a single round-trip/transaction. Returns count of newly inserted rows."""
+    if not items:
+        return 0
+    conn = get_db_connection()
+    try:
+        fetched_at = datetime.utcnow().isoformat()
+        rows = [
+            (date, item["source"], item["title"], item["description"], item["url"], item["category"], fetched_at)
+            for item in items
+        ]
+        cursor = conn.cursor()
+        inserted = psycopg2.extras.execute_values(
+            cursor,
+            """
+            INSERT INTO raw_articles (date, source, title, description, url, category, fetched_at)
+            VALUES %s
+            ON CONFLICT (url) DO UPDATE SET
+                date = EXCLUDED.date,
+                source = EXCLUDED.source,
+                title = EXCLUDED.title,
+                description = EXCLUDED.description,
+                category = EXCLUDED.category,
+                fetched_at = EXCLUDED.fetched_at
+            RETURNING (xmax = 0) AS inserted
+            """,
+            rows,
+            fetch=True,
+        )
+        conn.commit()
+        return sum(1 for r in inserted if r[0])
+    finally:
+        release_db_connection(conn)
+
+
 def get_raw_articles_by_date(db_path, date):
     """Retrieves all raw articles for a specific date, newest first."""
     conn = get_db_connection()
