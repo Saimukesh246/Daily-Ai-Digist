@@ -24,15 +24,36 @@
          AUTH MODAL — shown when user is not authenticated
          ============================================================ -->
     <div class="auth-backdrop" id="auth-backdrop">
+        <!-- Ambient animated glow blobs (decorative) -->
+        <div class="auth-ambient" aria-hidden="true">
+            <span class="auth-blob auth-blob-1"></span>
+            <span class="auth-blob auth-blob-2"></span>
+            <span class="auth-blob auth-blob-3"></span>
+        </div>
+
         <div class="auth-modal" id="auth-modal" role="dialog" aria-modal="true" aria-label="Log in or sign up">
 
             <!-- Header -->
             <div class="auth-modal-header">
                 <div class="auth-brand-pill">
+                    <span class="auth-brand-pulse"></span>
                     <i class="fa-solid fa-brain-circuit"></i> AI Digest
                 </div>
                 <h2 class="auth-title">Log in or sign up</h2>
                 <p class="auth-subtitle">Access your daily AI intelligence briefing and stay ahead of the curve.</p>
+
+                <!-- Feature highlight strip -->
+                <div class="auth-feature-strip">
+                    <div class="auth-feature-chip">
+                        <i class="fa-solid fa-tower-broadcast"></i> 28+ Sources
+                    </div>
+                    <div class="auth-feature-chip">
+                        <i class="fa-solid fa-bolt"></i> Daily Sync
+                    </div>
+                    <div class="auth-feature-chip">
+                        <i class="fa-solid fa-sparkles"></i> AI-Synthesized
+                    </div>
+                </div>
             </div>
 
             <!-- Step 1: Provider selection -->
@@ -70,18 +91,21 @@
                 </div>
 
                 <!-- Email input -->
-                <div class="auth-input-group">
+                <div class="auth-input-group auth-input-group-icon">
+                    <i class="fa-regular fa-envelope auth-input-leading-icon"></i>
                     <input
                         type="email"
                         id="auth-email-input"
-                        class="auth-input"
+                        class="auth-input auth-input-with-icon"
                         placeholder="Email address"
                         autocomplete="email"
                         spellcheck="false"
                     >
                 </div>
 
-                <button class="auth-continue-btn" id="btn-auth-continue">Continue</button>
+                <button class="auth-continue-btn" id="btn-auth-continue">
+                    <span>Continue</span> <i class="fa-solid fa-arrow-right-long"></i>
+                </button>
 
                 <p class="auth-legal">
                     By continuing, you agree to the <strong>Daily AI Digest</strong> terms of service.
