@@ -350,9 +350,21 @@ def run_sync_job(date_str):
         else:
             add_log("No Gemini API key — activating offline fallback engine...")
 
+        # If today's digest was already compiled earlier (e.g. someone clicked Sync
+        # twice in a row), capture what it showed before wiping it — so the new
+        # synthesis can be told to avoid repeating itself when re-syncing minutes
+        # later against largely the same underlying news.
+        previous_digest = database.get_digest(DB_PATH, date_str)
+        previously_shown_titles = []
+        if previous_digest and previous_digest.get("content"):
+            prev_content = previous_digest["content"]
+            previously_shown_titles = [n.get("headline", "") for n in prev_content.get("biggest_news", [])]
+            previously_shown_titles += [t.get("tool", "") for t in prev_content.get("discovered_tools", [])]
+            previously_shown_titles = [t for t in previously_shown_titles if t]
+
         # Always force-regenerate — delete stale digest so analyze starts fresh
         database.save_digest(DB_PATH, date_str, {})  # placeholder wipe
-        digest, mode = analyzer.generate_digest(DB_PATH, date_str, api_key)
+        digest, mode = analyzer.generate_digest(DB_PATH, date_str, api_key, previously_shown_titles)
 
         if "fallback" in mode:
             add_log("Intelligent offline synthesis complete.")

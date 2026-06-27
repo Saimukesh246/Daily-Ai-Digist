@@ -478,7 +478,7 @@ def run_offline_fallback(date_str, raw_items, past_items=None):
         "what_to_watch": what_to_watch
     }
 
-def generate_digest(db_path, date_str, api_key=None):
+def generate_digest(db_path, date_str, api_key=None, previously_shown_titles=None):
     """Aggregates daily items, compares them with history, synthesizes via Gemini or Fallback, and saves the output."""
     logger.info(f"Analyzing gathered news for {date_str}...")
     
@@ -524,7 +524,18 @@ def generate_digest(db_path, date_str, api_key=None):
         past_summary_str = ""
         for i, item in enumerate(past_items[:40]): # Top 40 items from last week
             past_summary_str += f"- [{item['category'].upper()}] Date: {item['date']} | Title: {item['title']}\n"
-            
+
+        rerun_note = ""
+        if previously_shown_titles:
+            titles_list = "\n".join(f"- {t}" for t in previously_shown_titles[:15])
+            rerun_note = (
+                f"\nIMPORTANT: A digest for {date_str} was already compiled earlier today and featured these "
+                f"items as the headline picks:\n{titles_list}\n"
+                "If today's raw logs contain other relevant stories/tools beyond these, prefer surfacing "
+                "DIFFERENT ones this time for variety. Only repeat an item above if it is genuinely the only "
+                "relevant option available.\n"
+            )
+
         system_instruction = (
             "You are an elite, premium AI technology analyst and veteran tech journalist (writing in the style of The Rundown AI, Ben's Bites, and TLDR AI). "
             "Your job is to read raw aggregated AI logs from today (along with a brief history of the past 7 days) and write a highly polished, daily newsletter digest. "
@@ -542,7 +553,7 @@ Here are today's crawled raw sources:
 
 Here is a summary of trending stories from the past 7 days (to prevent duplication and help track 'what changed'):
 {past_summary_str}
-
+{rerun_note}
 You must respond in a valid JSON object matching the schema below exactly. 
 
 Ensure the 'biggest_news' contains 2-3 of the absolute biggest headlines.
