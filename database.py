@@ -17,16 +17,24 @@ def _strip_unsupported_dsn_params(url):
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(params), parts.fragment))
 
 
-_pool = pg_pool.SimpleConnectionPool(1, 10, dsn=_strip_unsupported_dsn_params(DATABASE_URL)) if DATABASE_URL else None
+_DSN = _strip_unsupported_dsn_params(DATABASE_URL) if DATABASE_URL else None
+_pool = pg_pool.ThreadedConnectionPool(1, 10, dsn=_DSN) if _DSN else None
 
 # Kept for backward compatibility with callers that still pass a db_path —
-# Postgres connections are pooled via DATABASE_URL instead, so this is unused.
+# the Postgres connection comes from DATABASE_URL instead, so this is unused.
 DEFAULT_DB_PATH = None
 
 
 def get_db_connection(db_path=None):
-    """Borrows a pooled Postgres connection. Caller must call release_db_connection(conn)."""
-    return _pool.getconn()
+    """Borrows a pooled connection, discarding it and retrying once if Supabase's
+    pgbouncer has silently closed it server-side after being idle in the pool."""
+    conn = _pool.getconn()
+    try:
+        conn.cursor().execute("SELECT 1")
+    except psycopg2.OperationalError:
+        _pool.putconn(conn, close=True)
+        conn = _pool.getconn()
+    return conn
 
 
 def release_db_connection(conn):
