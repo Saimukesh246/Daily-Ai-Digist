@@ -96,6 +96,11 @@ SYNC_STATUS = {
 # Google OAuth Client ID (set via env var or Settings panel in future)
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
+# Shared secret for the external cron trigger (/api/cron/hourly) — lets a free
+# external pinger (cron-job.org etc.) drive the hourly job on hosts like Render's
+# free tier, where the process sleeps and the in-process scheduler thread dies with it.
+CRON_SECRET = os.environ.get("CRON_SECRET", "")
+
 # ---------------------------------------------------------------------------
 # Security / Auth helpers
 # ---------------------------------------------------------------------------
@@ -685,6 +690,22 @@ async def trigger_sync(background_tasks: BackgroundTasks, date: str = None,
     return {"message": "Aggregation task triggered.", "date": target_date}
 
 
+@app.api_route("/api/cron/hourly", methods=["GET", "POST"])
+async def trigger_hourly_cron(request: Request, background_tasks: BackgroundTasks):
+    """Externally-triggered equivalent of the in-process hourly scheduler, for
+    hosts (e.g. Render's free tier) that sleep the process when idle. Point an
+    external cron pinger (cron-job.org, EasyCron, etc.) at this URL hourly with
+    the shared secret, either as `X-Cron-Secret` header or `?secret=` query param
+    (query param exists for pingers that can't set custom headers)."""
+    if not CRON_SECRET:
+        raise HTTPException(status_code=503, detail="CRON_SECRET is not configured on the server.")
+    provided = request.headers.get("X-Cron-Secret") or request.query_params.get("secret")
+    if provided != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid or missing cron secret.")
+    background_tasks.add_task(run_scheduled_tasks)
+    return {"message": "Hourly scheduled tasks triggered."}
+
+
 @app.get("/api/status")
 async def get_status(_user: dict = Depends(require_auth)):
     return SYNC_STATUS
@@ -1086,36 +1107,52 @@ def send_scheduled_emails(date_str):
 # Background hourly scheduler
 # ---------------------------------------------------------------------------
 
+def run_scheduled_tasks():
+    """Runs one pass of the hourly job: auto-sync today's digest if missing,
+    dispatch the daily email once per day after 7am, dispatch the weekly
+    roundup on Sundays, and clean up expired sessions.
+
+    Idempotent — safe to call from the in-process loop and the external cron
+    trigger at the same time, since each step checks a "last done" marker
+    before acting.
+    """
+    try:
+        now       = datetime.now()
+        today_str = now.strftime("%Y-%m-%d")
+        row = database.get_digest(DB_PATH, today_str)
+
+        if not row and SYNC_STATUS["status"] == "idle":
+            logger.info(f"Auto-Scheduler: Today's digest ({today_str}) missing. Auto-triggering...")
+            run_sync_job(today_str)
+
+        if now.hour >= 7:
+            # Daily digest email
+            last_sent = database.get_setting(DB_PATH, "last_email_sent_date", "")
+            if last_sent != today_str:
+                send_scheduled_emails(today_str)
+
+            # Weekly digest email — every Sunday (weekday 6)
+            if now.weekday() == 6:
+                last_weekly = database.get_setting(DB_PATH, "last_weekly_email_sent", "")
+                if last_weekly != today_str:
+                    send_weekly_digest()
+
+        # Clean up expired sessions periodically
+        database.delete_expired_sessions(DB_PATH)
+
+    except Exception as e:
+        logger.error(f"Error in scheduled tasks run: {e}")
+
+
 def start_hourly_scheduler():
+    """In-process fallback loop — only useful while the process happens to stay
+    alive (e.g. always-on hosts, or a Render instance kept warm by traffic).
+    On hosts that sleep when idle, rely on the external /api/cron/hourly trigger
+    instead, since this thread dies along with the process."""
     def scheduler_loop():
         logger.info("Hourly background scheduler daemon started.")
         while True:
-            try:
-                now       = datetime.now()
-                today_str = now.strftime("%Y-%m-%d")
-                row = database.get_digest(DB_PATH, today_str)
-
-                if not row and SYNC_STATUS["status"] == "idle":
-                    logger.info(f"Auto-Scheduler: Today's digest ({today_str}) missing. Auto-triggering...")
-                    run_sync_job(today_str)
-
-                if now.hour >= 7:
-                    # Daily digest email
-                    last_sent = database.get_setting(DB_PATH, "last_email_sent_date", "")
-                    if last_sent != today_str:
-                        send_scheduled_emails(today_str)
-
-                    # Weekly digest email — every Sunday (weekday 6)
-                    if now.weekday() == 6:
-                        last_weekly = database.get_setting(DB_PATH, "last_weekly_email_sent", "")
-                        if last_weekly != today_str:
-                            send_weekly_digest()
-
-                # Clean up expired sessions periodically
-                database.delete_expired_sessions(DB_PATH)
-
-            except Exception as e:
-                logger.error(f"Error in background scheduler: {e}")
+            run_scheduled_tasks()
             time.sleep(3600)
 
     thread = threading.Thread(target=scheduler_loop, daemon=True)
