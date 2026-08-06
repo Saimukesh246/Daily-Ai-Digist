@@ -72,7 +72,6 @@ async function apiFetch(url, options = {}) {
     const btnContinue     = document.getElementById("btn-auth-continue");
     const btnBack         = document.getElementById("btn-auth-back");
     const btnSubmit       = document.getElementById("btn-auth-submit");
-    const btnGoogleLogin  = document.getElementById("btn-google-login");
     const btnToggleMode   = document.getElementById("btn-toggle-auth-mode");
     const authEmailShow   = document.getElementById("auth-email-show");
     const modeLabel       = document.getElementById("auth-mode-label");
@@ -246,54 +245,6 @@ async function apiFetch(url, options = {}) {
             showApp(data.user);
         } catch (err) {
             showError("Network error — please try again.");
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    // Google Sign-In
-    btnGoogleLogin && btnGoogleLogin.addEventListener("click", async () => {
-        // Check if Google is configured on server
-        try {
-            const res  = await fetch("/api/auth/google-client-id");
-            const data = await res.json();
-            if (!data.configured || !data.client_id) {
-                showError("Google Sign-In is not configured on this server. Please use email/password login.");
-                // scroll to email
-                emailInput.focus();
-                return;
-            }
-            // Trigger Google One Tap / Sign-in popup
-            // This requires the GSI library loaded — for now we show the email step
-            // If Google GSI is loaded, use it
-            if (window.google && window.google.accounts) {
-                window.google.accounts.id.initialize({
-                    client_id: data.client_id,
-                    callback:  handleGoogleResponse,
-                });
-                window.google.accounts.id.prompt();
-            } else {
-                showError("Google Sign-In requires HTTPS and the Google Identity Services library. Use email/password instead.");
-            }
-        } catch {
-            showError("Could not reach server. Please try again.");
-        }
-    });
-
-    async function handleGoogleResponse(response) {
-        setLoading(true);
-        try {
-            const res  = await fetch("/api/auth/google", {
-                method:  "POST",
-                headers: { "Content-Type": "application/json" },
-                body:    JSON.stringify({ credential: response.credential }),
-            });
-            const data = await res.json();
-            if (!res.ok) { showError(data.detail || "Google login failed."); return; }
-            saveAuth(data.token, data.user);
-            showApp(data.user);
-        } catch {
-            showError("Google authentication failed.");
         } finally {
             setLoading(false);
         }

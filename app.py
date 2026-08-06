@@ -93,9 +93,6 @@ SYNC_STATUS = {
     "completed_at": None
 }
 
-# Google OAuth Client ID (set via env var or Settings panel in future)
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
-
 # Shared secret for the external cron trigger (/api/cron/hourly) — lets a free
 # external pinger (cron-job.org etc.) drive the hourly job on hosts like Render's
 # free tier, where the process sleeps and the in-process scheduler thread dies with it.
@@ -228,9 +225,6 @@ class RegisterPayload(BaseModel):
 class LoginPayload(BaseModel):
     email: str
     password: str
-
-class GoogleAuthPayload(BaseModel):
-    credential: str   # Google ID token (JWT from Sign-In button)
 
 # ---------------------------------------------------------------------------
 # Logging helper
@@ -500,88 +494,6 @@ async def login(payload: LoginPayload, request: Request):
     }
 
 
-@app.post("/api/auth/google")
-async def google_auth(payload: GoogleAuthPayload, request: Request):
-    """
-    Verify a Google ID token (from Google One Tap / Sign-In button) and
-    return a session token. Creates the user if first time.
-    """
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(
-            status_code=503,
-            detail="Google OAuth is not configured on this server. Please use email/password login or set GOOGLE_CLIENT_ID."
-        )
-
-    try:
-        import httpx
-        # Verify the Google ID token with Google's tokeninfo endpoint
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                "https://oauth2.googleapis.com/tokeninfo",
-                params={"id_token": payload.credential}
-            )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=401, detail="Invalid Google token.")
-
-        token_info = resp.json()
-
-        # Validate audience
-        if token_info.get("aud") != GOOGLE_CLIENT_ID:
-            raise HTTPException(status_code=401, detail="Token audience mismatch.")
-
-        google_id  = token_info.get("sub", "")
-        email      = token_info.get("email", "").lower()
-        name       = token_info.get("name", email.split("@")[0])
-        avatar_url = token_info.get("picture", "")
-
-        if not email:
-            raise HTTPException(status_code=400, detail="Google account has no email.")
-
-        # Find user by Google ID or email
-        user = database.get_user_by_google_id(DB_PATH, google_id)
-        if not user:
-            user = database.get_user_by_email(DB_PATH, email)
-
-        if user:
-            # Update Google info if changed
-            database.update_user_google_info(DB_PATH, user["id"], google_id, avatar_url, name)
-            user = database.get_user_by_id(DB_PATH, user["id"])
-        else:
-            # First-time Google sign-in — create account
-            role = "admin" if database.get_user_count(DB_PATH) == 0 else "viewer"
-            user = database.create_user(
-                DB_PATH, email, name=name,
-                google_id=google_id, avatar_url=avatar_url, role=role
-            )
-            if not user:
-                raise HTTPException(status_code=500, detail="Failed to create account.")
-
-        session_token = generate_token()
-        database.save_session(DB_PATH, session_token, user["id"])
-        database.update_user_last_login(DB_PATH, user["id"])
-
-        # Send login confirmation email in background
-        smtp = get_smtp_settings()
-        threading.Thread(
-            target=emailer.send_login_confirmation_email,
-            args=(smtp, email, name, datetime.utcnow(), "Google Sign-In"),
-            daemon=True
-        ).start()
-
-        return {
-            "token": session_token,
-            "user":  {"id": user["id"], "email": user["email"], "name": user["name"],
-                      "avatar_url": user.get("avatar_url", ""), "role": user.get("role", "viewer")},
-            "message": "Google login successful."
-        }
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Google auth error:")
-        raise HTTPException(status_code=500, detail=f"Google authentication failed: {exc}")
-
-
 @app.get("/api/auth/me")
 async def get_me(current_user: dict = Depends(require_auth)):
     """Returns info about the currently authenticated user."""
@@ -603,11 +515,6 @@ async def logout(credentials: Optional[HTTPAuthorizationCredentials] = Depends(s
         database.delete_session(DB_PATH, credentials.credentials)
     return {"message": "Logged out successfully."}
 
-
-@app.get("/api/auth/google-client-id")
-async def get_google_client_id():
-    """Returns the Google Client ID (safe to expose to frontend) so the Sign-In button can be configured."""
-    return {"client_id": GOOGLE_CLIENT_ID, "configured": bool(GOOGLE_CLIENT_ID)}
 
 # ---------------------------------------------------------------------------
 # DATA API ENDPOINTS (protected by auth)

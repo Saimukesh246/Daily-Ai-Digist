@@ -617,7 +617,7 @@ def toggle_source(db_path, source_id):
 # AUTH — Users & Sessions
 # =============================================================================
 
-def create_user(db_path, email, name="", password_hash="", google_id="", avatar_url="", role="viewer"):
+def create_user(db_path, email, name="", password_hash="", avatar_url="", role="viewer"):
     """Creates a new user. Returns user dict on success, None if email already exists."""
     conn = get_db_connection()
     try:
@@ -625,10 +625,10 @@ def create_user(db_path, email, name="", password_hash="", google_id="", avatar_
         created_at = datetime.utcnow().isoformat()
         try:
             cursor.execute("""
-            INSERT INTO users (email, name, password_hash, google_id, avatar_url, created_at, role)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO users (email, name, password_hash, avatar_url, created_at, role)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
-            """, (email.strip().lower(), name.strip(), password_hash, google_id, avatar_url, created_at, role))
+            """, (email.strip().lower(), name.strip(), password_hash, avatar_url, created_at, role))
             user_id = cursor.fetchone()[0]
             conn.commit()
         except psycopg2.IntegrityError:
@@ -663,18 +663,6 @@ def get_user_by_id(db_path, user_id):
         release_db_connection(conn)
 
 
-def get_user_by_google_id(db_path, google_id):
-    """Retrieves a user by their Google account ID."""
-    conn = get_db_connection()
-    try:
-        cursor = _dict_cursor(conn)
-        cursor.execute("SELECT * FROM users WHERE google_id = %s", (google_id,))
-        row = cursor.fetchone()
-        return dict(row) if row else None
-    finally:
-        release_db_connection(conn)
-
-
 def update_user_last_login(db_path, user_id):
     """Stamps the user's last_login timestamp to now."""
     conn = get_db_connection()
@@ -682,20 +670,6 @@ def update_user_last_login(db_path, user_id):
         cursor = conn.cursor()
         cursor.execute("UPDATE users SET last_login = %s WHERE id = %s",
                        (datetime.utcnow().isoformat(), user_id))
-        conn.commit()
-    finally:
-        release_db_connection(conn)
-
-
-def update_user_google_info(db_path, user_id, google_id, avatar_url, name):
-    """Updates Google OAuth info for an existing user."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-        UPDATE users SET google_id = %s, avatar_url = %s, name = %s
-        WHERE id = %s
-        """, (google_id, avatar_url, name, user_id))
         conn.commit()
     finally:
         release_db_connection(conn)

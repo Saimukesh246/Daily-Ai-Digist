@@ -8,8 +8,6 @@ services:
     envVars:
       - key: HOST
         value: 0.0.0.0
-      - key: GOOGLE_CLIENT_ID
-        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: APP_URL
