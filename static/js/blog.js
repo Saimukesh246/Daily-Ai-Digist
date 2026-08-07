@@ -120,7 +120,6 @@
         const lead = items[0];
         const sidebar = items.slice(1, 3);
 
-        const thumbs = [];
         let html = `
         <div>
             <a href="${safeUrl(lead.link)}" target="_blank" rel="noopener noreferrer">
@@ -152,22 +151,28 @@
         grid.querySelectorAll(".thumb[data-link]").forEach(el => loadThumbnail(el, el.dataset.link));
     }
 
-    function renderResearch(items) {
+    /** Shared renderer for image-card grids (Research, Tools) — same visual
+     *  shape, different fields per section. */
+    function renderCardGrid(sectionId, gridId, items, opts) {
         if (!items.length) return;
-        const grid = document.getElementById("research-grid");
+        const grid = document.getElementById(gridId);
+        const linkKey = opts.linkKey || "link";
         let html = "";
-        items.slice(0, 4).forEach(item => {
+        items.forEach(item => {
+            const link = item[linkKey];
             html += `
             <div>
-                <a href="${safeUrl(item.link)}" target="_blank" rel="noopener noreferrer">
-                    <div class="thumb research-thumb" data-link="${escapeHtml(item.link)}"></div>
+                <a href="${safeUrl(link)}" target="_blank" rel="noopener noreferrer">
+                    <div class="thumb research-thumb" data-link="${escapeHtml(link)}"></div>
                 </a>
-                <a class="research-title" href="${safeUrl(item.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a>
-                <div class="category-tag">${escapeHtml(item.category || "")}</div>
+                <a class="research-title" href="${safeUrl(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item[opts.titleKey])}</a>
+                ${opts.dekKey ? `<div class="research-dek">${escapeHtml(item[opts.dekKey] || "")}</div>` : ""}
+                ${opts.categoryKey ? `<div class="category-tag">${escapeHtml(item[opts.categoryKey] || "")}</div>` : ""}
+                ${opts.extraKey ? `<div class="pricing-tag">${escapeHtml(item[opts.extraKey] || "")}</div>` : ""}
             </div>`;
         });
         grid.innerHTML = html;
-        document.getElementById("research").hidden = false;
+        document.getElementById(sectionId).hidden = false;
         grid.querySelectorAll(".thumb[data-link]").forEach(el => loadThumbnail(el, el.dataset.link));
     }
 
@@ -184,17 +189,83 @@
         container.innerHTML = html;
     }
 
-    function renderToolsMarket(tools, market) {
-        if (!tools.length && !market.length) return;
-        if (tools.length) {
-            renderList("tools-list", tools.slice(0, 6), "tool", "what_it_does");
-            document.getElementById("tools-col").hidden = false;
-        }
-        if (market.length) {
-            renderList("market-list", market.slice(0, 4), "headline", "summary");
-            document.getElementById("market-col").hidden = false;
-        }
-        document.getElementById("tools-market").hidden = false;
+    function renderMarket(items) {
+        if (!items.length) return;
+        renderList("market-list", items, "headline", "summary");
+        document.getElementById("market").hidden = false;
+    }
+
+    function renderWhatChanged(items) {
+        if (!items.length) return;
+        const list = document.getElementById("changed-list");
+        let html = "";
+        items.forEach(item => {
+            html += `
+            <div class="changed-card">
+                <h3>${escapeHtml(item.tool_or_company)}</h3>
+                <div class="changed-row yesterday"><span class="changed-label">Yesterday</span><span>${escapeHtml(item.yesterday)}</span></div>
+                <div class="changed-row today"><span class="changed-label">Today</span><span>${escapeHtml(item.today)}</span></div>
+                <div class="changed-why">${escapeHtml(item.why_it_matters || "")}</div>
+            </div>`;
+        });
+        list.innerHTML = html;
+        document.getElementById("what-changed").hidden = false;
+    }
+
+    function renderWorkflows(items) {
+        if (!items.length) return;
+        const list = document.getElementById("workflow-list");
+        let html = "";
+        items.forEach(item => {
+            const steps = (item.steps || []).map(s => `<li>${escapeHtml(s)}</li>`).join("");
+            html += `
+            <div class="workflow-card">
+                <div class="workflow-head">
+                    <h3>${escapeHtml(item.title)}</h3>
+                    <div class="difficulty-tag">${escapeHtml(item.difficulty || "")}</div>
+                </div>
+                <div class="workflow-problem">${escapeHtml(item.problem_solved || "")}</div>
+                <div class="workflow-tools">${escapeHtml(item.tools_used || "")}</div>
+                <ol class="workflow-steps">${steps}</ol>
+                <div class="workflow-value">${escapeHtml(item.business_value || "")}</div>
+            </div>`;
+        });
+        list.innerHTML = html;
+        document.getElementById("trending-workflows").hidden = false;
+    }
+
+    function renderQuickTakes(items) {
+        if (!items.length) return;
+        const grid = document.getElementById("quick-takes-grid");
+        let html = "";
+        items.forEach(item => {
+            html += `
+            <div class="quick-take-card">
+                <div class="hype-tag">${escapeHtml(item.hype_level || "")}</div>
+                <h3>${escapeHtml(item.topic)}</h3>
+                <div class="quick-take-opinion">${escapeHtml(item.opinion || "")}</div>
+            </div>`;
+        });
+        grid.innerHTML = html;
+        document.getElementById("quick-takes").hidden = false;
+    }
+
+    function renderWhatToWatch(items) {
+        if (!items.length) return;
+        const list = document.getElementById("watch-list");
+        let html = "";
+        items.forEach(item => {
+            html += `
+            <div class="watch-item">
+                <i class="fa-solid fa-arrow-trend-up watch-icon"></i>
+                <div>
+                    <h3>${escapeHtml(item.item)}</h3>
+                    <div class="watch-details">${escapeHtml(item.details || "")}</div>
+                </div>
+            </div>`;
+        });
+        list.innerHTML = html;
+        document.getElementById("what-to-watch").hidden = false;
     }
 
     function renderTicker(digest) {
@@ -205,6 +276,7 @@
         if ((content.discovered_tools || []).length) items.push({ text: `${content.discovered_tools.length} new tools discovered` });
         if ((content.open_source_research || []).length) items.push({ text: `${content.open_source_research.length} research items indexed` });
         if ((content.market_industry || []).length) items.push({ text: `${content.market_industry.length} market movements tracked` });
+        if ((content.trending_workflows || []).length) items.push({ text: `${content.trending_workflows.length} trending workflows featured` });
 
         if (!items.length) return;
         const ticker = document.getElementById("ticker");
@@ -238,8 +310,15 @@
             kicker.textContent = `Daily Intelligence Briefing — ${formatDate(digest.date)}`;
 
             renderTopStories(content.biggest_news || []);
-            renderResearch(content.open_source_research || []);
-            renderToolsMarket(content.discovered_tools || [], content.market_industry || []);
+            renderCardGrid("tools", "tools-grid", (content.discovered_tools || []).slice(0, 6),
+                { titleKey: "tool", categoryKey: "category", dekKey: "what_it_does", extraKey: "pricing" });
+            renderWhatChanged(content.what_changed || []);
+            renderWorkflows(content.trending_workflows || []);
+            renderCardGrid("research", "research-grid", (content.open_source_research || []).slice(0, 4),
+                { titleKey: "title", categoryKey: "category" });
+            renderMarket(content.market_industry || []);
+            renderQuickTakes(content.quick_takes || []);
+            renderWhatToWatch(content.what_to_watch || []);
             renderTicker(digest);
 
             showState("content");

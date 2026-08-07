@@ -366,22 +366,22 @@ button { font-family: inherit; }
     margin-top: 8px;
 }
 
-/* ── Tools & Market ────────────────────────────────────────── */
-.tools-market-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 40px;
+.research-dek {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 6px;
+    line-height: 1.5;
 }
 
-.tm-col h3 {
-    font-size: 13px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+.pricing-tag {
+    display: block;
+    font-size: 10.5px;
     color: var(--faint);
-    margin-bottom: 18px;
+    margin-top: 6px;
+    font-style: italic;
 }
 
+/* ── Market list (standalone section) ─────────────────────── */
 .tm-item {
     padding: 16px 0;
     border-top: 1px solid var(--border);
@@ -401,6 +401,190 @@ button { font-family: inherit; }
     font-size: 13px;
     color: var(--muted);
     margin-top: 5px;
+    line-height: 1.5;
+}
+
+/* ── What Changed Since Yesterday ─────────────────────────── */
+.changed-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 28px;
+}
+
+.changed-card {
+    border: 1px solid var(--border);
+    padding: 20px;
+}
+
+.changed-card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 14px;
+}
+
+.changed-row {
+    display: flex;
+    gap: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.changed-label {
+    flex-shrink: 0;
+    width: 64px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--faint);
+    padding-top: 2px;
+}
+
+.changed-row.yesterday { color: var(--faint); }
+.changed-row.today { color: var(--fg); }
+
+.changed-why {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    line-height: 1.5;
+}
+
+/* ── Trending AI Workflows ────────────────────────────────── */
+.workflow-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 28px;
+}
+
+.workflow-card {
+    border: 1px solid var(--border);
+    padding: 20px;
+}
+
+.workflow-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.workflow-card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.difficulty-tag {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--faint);
+    border: 1px solid var(--border);
+    padding: 3px 8px;
+}
+
+.workflow-problem {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 8px;
+    line-height: 1.5;
+}
+
+.workflow-tools {
+    font-size: 11.5px;
+    color: var(--faint);
+    margin-top: 10px;
+}
+
+.workflow-steps {
+    margin: 12px 0 0;
+    padding-left: 18px;
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.7;
+}
+
+.workflow-value {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    line-height: 1.5;
+}
+
+/* ── Quick Takes ───────────────────────────────────────────── */
+.quick-takes-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 28px;
+}
+
+.quick-take-card {
+    padding: 0;
+}
+
+.hype-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--faint);
+    border-bottom: 1px solid var(--fg);
+    padding-bottom: 2px;
+    margin-bottom: 10px;
+}
+
+.quick-take-card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.quick-take-opinion {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 8px;
+    line-height: 1.6;
+}
+
+/* ── What to Watch Tomorrow ───────────────────────────────── */
+.watch-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.watch-item {
+    display: flex;
+    gap: 20px;
+    padding: 18px 0;
+    border-top: 1px solid var(--border);
+}
+.watch-item:first-child { border-top: none; padding-top: 0; }
+
+.watch-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--faint);
+    padding-top: 3px;
+}
+
+.watch-item h3 {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.watch-details {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
     line-height: 1.5;
 }
 
@@ -485,7 +669,9 @@ button { font-family: inherit; }
 
     .top-grid { grid-template-columns: 1fr; }
     .research-grid { grid-template-columns: 1fr; }
-    .tools-market-grid { grid-template-columns: 1fr; gap: 28px; }
+    .changed-list { grid-template-columns: 1fr; gap: 20px; }
+    .workflow-list { grid-template-columns: 1fr; gap: 20px; }
+    .quick-takes-grid { grid-template-columns: 1fr; gap: 24px; }
 
     .page-inner { padding: 0 20px; }
     .header-inner { padding: 0 20px; }

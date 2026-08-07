@@ -32,9 +32,11 @@
             </button>
             <nav class="main-nav" aria-label="Primary">
                 <a href="/dashboard">Dashboard</a>
-                <a href="#top-stories">Top Stories</a>
+                <a href="#top-stories">News</a>
+                <a href="#tools">Tools</a>
                 <a href="#research">Research</a>
-                <a href="#tools-market">Tools &amp; Market</a>
+                <a href="#market">Market</a>
+                <a href="#quick-takes">Quick Takes</a>
             </nav>
             <div class="header-actions">
                 <button class="icon-btn theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
@@ -44,9 +46,14 @@
         </div>
         <nav class="mobile-nav" id="mobile-nav" aria-label="Primary (mobile)" hidden>
             <a href="/dashboard">Dashboard</a>
-            <a href="#top-stories">Top Stories</a>
-            <a href="#research">Research</a>
-            <a href="#tools-market">Tools &amp; Market</a>
+            <a href="#top-stories">Biggest AI News Today</a>
+            <a href="#tools">New AI Tools Discovered</a>
+            <a href="#what-changed">What Changed Since Yesterday</a>
+            <a href="#trending-workflows">Trending AI Workflows</a>
+            <a href="#research">Open Source &amp; Technical Research</a>
+            <a href="#market">Market &amp; Industry Movements</a>
+            <a href="#quick-takes">Quick Takes</a>
+            <a href="#what-to-watch">What to Watch Tomorrow</a>
         </nav>
     </header>
 
@@ -74,31 +81,57 @@
             <div id="content" hidden>
 
                 <section class="section" id="top-stories" data-reveal aria-labelledby="top-stories-heading">
-                    <h2 id="top-stories-heading">Top Stories</h2>
+                    <h2 id="top-stories-heading">Biggest AI News Today</h2>
                     <div class="top-grid" id="top-grid"></div>
+                </section>
+
+                <section class="section" id="tools" data-reveal aria-labelledby="tools-heading" hidden>
+                    <div class="section-head">
+                        <h2 id="tools-heading">New AI Tools Discovered</h2>
+                    </div>
+                    <div class="research-grid" id="tools-grid"></div>
+                </section>
+
+                <section class="section" id="what-changed" data-reveal aria-labelledby="what-changed-heading" hidden>
+                    <div class="section-head">
+                        <h2 id="what-changed-heading">What Changed Since Yesterday</h2>
+                    </div>
+                    <div class="changed-list" id="changed-list"></div>
+                </section>
+
+                <section class="section" id="trending-workflows" data-reveal aria-labelledby="workflows-heading" hidden>
+                    <div class="section-head">
+                        <h2 id="workflows-heading">Trending AI Workflows</h2>
+                    </div>
+                    <div class="workflow-list" id="workflow-list"></div>
                 </section>
 
                 <section class="section" id="research" data-reveal aria-labelledby="research-heading" hidden>
                     <div class="section-head">
-                        <h2 id="research-heading">Research</h2>
+                        <h2 id="research-heading">Open Source &amp; Technical Research</h2>
                     </div>
                     <div class="research-grid" id="research-grid"></div>
                 </section>
 
-                <section class="section" id="tools-market" data-reveal aria-labelledby="tools-market-heading" hidden>
+                <section class="section" id="market" data-reveal aria-labelledby="market-heading" hidden>
                     <div class="section-head">
-                        <h2 id="tools-market-heading">Tools &amp; Market</h2>
+                        <h2 id="market-heading">Market &amp; Industry Movements</h2>
                     </div>
-                    <div class="tools-market-grid">
-                        <div class="tm-col" id="tools-col" hidden>
-                            <h3>Tools</h3>
-                            <div id="tools-list"></div>
-                        </div>
-                        <div class="tm-col" id="market-col" hidden>
-                            <h3>Market</h3>
-                            <div id="market-list"></div>
-                        </div>
+                    <div class="tm-col" id="market-list"></div>
+                </section>
+
+                <section class="section" id="quick-takes" data-reveal aria-labelledby="quick-takes-heading" hidden>
+                    <div class="section-head">
+                        <h2 id="quick-takes-heading">Quick Takes</h2>
                     </div>
+                    <div class="quick-takes-grid" id="quick-takes-grid"></div>
+                </section>
+
+                <section class="section" id="what-to-watch" data-reveal aria-labelledby="what-to-watch-heading" hidden>
+                    <div class="section-head">
+                        <h2 id="what-to-watch-heading">What to Watch Tomorrow</h2>
+                    </div>
+                    <div class="watch-list" id="watch-list"></div>
                 </section>
 
                 <section class="section subscribe-section" id="subscribe" data-reveal>
