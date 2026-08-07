@@ -61,6 +61,7 @@
     (function initMobileNav() {
         const toggle = document.getElementById("nav-toggle");
         const nav = document.getElementById("mobile-nav");
+        if (!toggle || !nav) return;
         toggle.addEventListener("click", () => {
             const isHidden = nav.hasAttribute("hidden");
             if (isHidden) { nav.removeAttribute("hidden"); toggle.setAttribute("aria-expanded", "true"); }
