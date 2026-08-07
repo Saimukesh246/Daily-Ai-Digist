@@ -36,3 +36,4 @@ venv/
 # Local scripts and logs
 fix_fetch.py
 *.log
+*standalone*.html

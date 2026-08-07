@@ -28,6 +28,8 @@ DEFAULT_DB_PATH = None
 def get_db_connection(db_path=None):
     """Borrows a pooled connection, discarding it and retrying once if Supabase's
     pgbouncer has silently closed it server-side after being idle in the pool."""
+    if _pool is None:
+        raise RuntimeError("DATABASE_URL environment variable is not set. Please check your .env file.")
     conn = _pool.getconn()
     try:
         conn.cursor().execute("SELECT 1")
@@ -38,7 +40,8 @@ def get_db_connection(db_path=None):
 
 
 def release_db_connection(conn):
-    _pool.putconn(conn)
+    if _pool is not None and conn is not None:
+        _pool.putconn(conn)
 
 
 def _dict_cursor(conn):
