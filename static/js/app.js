@@ -472,18 +472,55 @@ function bootDashboard() {
     // Card gradient presets — rotated by index for visual variety
     const THUMB_GRADS = ["thumb-g0","thumb-g1","thumb-g2","thumb-g3","thumb-g4"];
 
-    // Asynchronously fetches OG image via backend proxy and applies it to a thumb element
+    // Curated tech-editorial images used when a source has no usable og:image
+    const FALLBACK_TECH_IMAGES = [
+        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1677442136019-21780efad99a?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&auto=format&fit=crop&q=80"
+    ];
+
+    function getFallbackImage(link) {
+        let hash = 0;
+        for (let i = 0; i < (link || "").length; i++) {
+            hash = ((hash << 5) - hash) + link.charCodeAt(i);
+            hash |= 0;
+        }
+        const idx = Math.abs(hash) % FALLBACK_TECH_IMAGES.length;
+        return FALLBACK_TECH_IMAGES[idx];
+    }
+
+    function applyThumbImage(thumbEl, src) {
+        thumbEl.style.backgroundImage = `url("${src}")`;
+        thumbEl.style.backgroundSize  = "cover";
+        thumbEl.style.backgroundPosition = "center";
+        thumbEl.classList.add("has-og-image");
+    }
+
+    // Asynchronously fetches OG image via backend proxy and applies it to a thumb element,
+    // falling back to a curated tech image when extraction or loading fails.
     async function loadOgImage(url, thumbEl) {
+        const fallbackUrl = getFallbackImage(url);
         try {
             thumbEl.classList.add("thumb-loading");
             const res  = await apiFetch(`/api/og-image?url=${encodeURIComponent(url)}`);
             const data = await res.json();
             thumbEl.classList.remove("thumb-loading");
             if (data.image_url) {
-                thumbEl.style.backgroundImage = `url(${data.image_url})`;
-                thumbEl.style.backgroundSize  = "cover";
-                thumbEl.style.backgroundPosition = "center";
-                thumbEl.classList.add("has-og-image");
+                const proxyUrl = `/api/public/og-image-proxy?url=${encodeURIComponent(data.image_url)}`;
+                const img = new Image();
+                img.onload = () => applyThumbImage(thumbEl, proxyUrl);
+                img.onerror = () => {
+                    const directImg = new Image();
+                    directImg.onload = () => applyThumbImage(thumbEl, data.image_url);
+                    directImg.onerror = () => applyThumbImage(thumbEl, fallbackUrl);
+                    directImg.src = data.image_url;
+                };
+                img.src = proxyUrl;
+            } else {
+                applyThumbImage(thumbEl, fallbackUrl);
             }
             if (data.title) {
                 const card = thumbEl.closest(".news-card, .research-card, .market-card");
@@ -496,6 +533,7 @@ function bootDashboard() {
             }
         } catch (e) {
             thumbEl.classList.remove("thumb-loading");
+            applyThumbImage(thumbEl, fallbackUrl);
         }
     }
 
