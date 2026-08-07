@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Digest — Daily Intelligence Briefing</title>
+    <meta name="description" content="A daily briefing on AI news, research, tools, and market movement — synthesized from 7+ live sources.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/blog.css?v=1">
+
+    <!-- Applied before first paint so the correct theme renders immediately (no flash). -->
+    <script>
+    (function () {
+        var saved = localStorage.getItem("aidigest_blog_theme");
+        var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+    })();
+    </script>
+</head>
+<body>
+
+    <div class="progress-bar" id="progress-bar"></div>
+
+    <header class="site-header" id="site-header">
+        <div class="header-inner">
+            <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+            <nav class="main-nav" aria-label="Primary">
+                <a href="/dashboard">Dashboard</a>
+                <a href="#top-stories">Top Stories</a>
+                <a href="#research">Research</a>
+                <a href="#tools-market">Tools &amp; Market</a>
+            </nav>
+            <div class="header-actions">
+                <button class="icon-btn theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+                    <i class="fa-solid fa-moon" id="theme-icon"></i>
+                </button>
+            </div>
+        </div>
+        <nav class="mobile-nav" id="mobile-nav" aria-label="Primary (mobile)" hidden>
+            <a href="/dashboard">Dashboard</a>
+            <a href="#top-stories">Top Stories</a>
+            <a href="#research">Research</a>
+            <a href="#tools-market">Tools &amp; Market</a>
+        </nav>
+    </header>
+
+    <div class="ticker" id="ticker" hidden>
+        <div class="ticker-track" id="ticker-track"></div>
+    </div>
+
+    <main>
+        <div class="page-inner">
+
+            <div class="masthead">
+                <h1 class="site-title">AI Digest</h1>
+                <div class="kicker" id="kicker">Daily Intelligence Briefing</div>
+                <div class="social-row" aria-hidden="true">
+                    <i class="fa-brands fa-instagram"></i>
+                    <i class="fa-brands fa-facebook"></i>
+                    <i class="fa-brands fa-twitter"></i>
+                </div>
+            </div>
+
+            <div id="state-loading" class="state-msg">Loading today's briefing…</div>
+            <div id="state-empty" class="state-msg" hidden>No digest has been generated yet. Check back soon.</div>
+            <div id="state-error" class="state-msg" hidden>Couldn't load the digest. Please try again later.</div>
+
+            <div id="content" hidden>
+
+                <section class="section" id="top-stories" data-reveal aria-labelledby="top-stories-heading">
+                    <h2 id="top-stories-heading">Top Stories</h2>
+                    <div class="top-grid" id="top-grid"></div>
+                </section>
+
+                <section class="section" id="research" data-reveal aria-labelledby="research-heading" hidden>
+                    <div class="section-head">
+                        <h2 id="research-heading">Research</h2>
+                    </div>
+                    <div class="research-grid" id="research-grid"></div>
+                </section>
+
+                <section class="section" id="tools-market" data-reveal aria-labelledby="tools-market-heading" hidden>
+                    <div class="section-head">
+                        <h2 id="tools-market-heading">Tools &amp; Market</h2>
+                    </div>
+                    <div class="tools-market-grid">
+                        <div class="tm-col" id="tools-col" hidden>
+                            <h3>Tools</h3>
+                            <div id="tools-list"></div>
+                        </div>
+                        <div class="tm-col" id="market-col" hidden>
+                            <h3>Market</h3>
+                            <div id="market-list"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="section subscribe-section" id="subscribe" data-reveal>
+                    <h2>Bring the daily briefing to your inbox</h2>
+                    <p>Sign up for the weekly AI Digest roundup.</p>
+                    <form class="subscribe-form" id="subscribe-form">
+                        <input type="email" id="subscribe-email" placeholder="Email address" autocomplete="email" required>
+                        <button type="submit">Subscribe</button>
+                    </form>
+                    <div class="subscribe-msg" id="subscribe-msg" role="status" aria-live="polite"></div>
+                </section>
+
+            </div>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <div class="page-inner footer-inner">
+            <div>&copy; <span id="footer-year"></span> AI Digest. Autonomous intelligence briefing.</div>
+            <div class="social-row" aria-hidden="true">
+                <i class="fa-brands fa-instagram"></i>
+                <i class="fa-brands fa-facebook"></i>
+                <i class="fa-brands fa-twitter"></i>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/js/blog.js?v=1"></script>
+</body>
+</html>

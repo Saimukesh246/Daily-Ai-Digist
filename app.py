@@ -402,7 +402,23 @@ async def healthz():
 
 
 @app.get("/", response_class=HTMLResponse)
+async def serve_blog():
+    """Public, unauthenticated News Blog homepage — the digest's public face."""
+    blog_path = os.path.join(STATIC_DIR, "blog.html")
+    if not os.path.exists(blog_path):
+        return """
+        <html>
+            <head><title>Daily AI Digest</title><style>body {background:#0f172a; color:#f8fafc; font-family:sans-serif; text-align:center; padding:100px;}</style></head>
+            <body><h1>Daily AI Digest Engine Online</h1><p>The static frontend is being generated. Please refresh in a moment...</p></body>
+        </html>
+        """
+    with open(blog_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard():
+    """Authenticated dashboard SPA — sync controls, settings, sources, subscribers."""
     index_path = os.path.join(STATIC_DIR, "index.html")
     if not os.path.exists(index_path):
         return """
@@ -528,8 +544,7 @@ async def search_articles(q: str = "", source: str = "", limit: int = 40,
     return {"results": results, "sources": sources, "total": len(results)}
 
 
-@app.get("/api/og-image")
-async def get_og_image(url: str, _user: dict = Depends(require_auth)):
+def _fetch_og_image(url: str) -> dict:
     if url in _og_cache:
         return _og_cache[url]
     result = {"image_url": "", "title": ""}
@@ -564,6 +579,11 @@ async def get_og_image(url: str, _user: dict = Depends(require_auth)):
     return result
 
 
+@app.get("/api/og-image")
+async def get_og_image(url: str, _user: dict = Depends(require_auth)):
+    return _fetch_og_image(url)
+
+
 @app.get("/api/digests")
 async def list_digests(_user: dict = Depends(require_auth)):
     dates = database.get_all_digest_dates(DB_PATH)
@@ -584,6 +604,37 @@ async def get_digest_by_date(date: str, _user: dict = Depends(require_auth)):
     if not digest:
         raise HTTPException(status_code=404, detail=f"Digest for date {date} not found.")
     return digest
+
+
+# ---------------------------------------------------------------------------
+# PUBLIC ENDPOINTS — power the unauthenticated News Blog homepage (static/blog.html).
+# No session required; each is rate-limited or read-only to bound abuse.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/public/digest")
+async def get_public_latest_digest():
+    digest = database.get_latest_digest(DB_PATH)
+    if not digest:
+        raise HTTPException(status_code=404, detail="No digests generated yet.")
+    return digest
+
+
+@app.get("/api/public/og-image")
+@limiter.limit("30/minute")
+async def get_public_og_image(request: Request, url: str):
+    return _fetch_og_image(url)
+
+
+@app.post("/api/public/subscribe")
+@limiter.limit("5/minute")
+async def public_subscribe(request: Request, payload: SubscriberPayload):
+    import re
+    if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.email):
+        raise HTTPException(status_code=400, detail="Invalid email address.")
+    added = database.add_subscriber(DB_PATH, payload.email, payload.name)
+    if not added:
+        raise HTTPException(status_code=409, detail=f"{payload.email} is already subscribed.")
+    return {"message": f"{payload.email} added successfully."}
 
 
 @app.post("/api/trigger")
