@@ -224,18 +224,36 @@
         setTimeout(() => sections.forEach(el => el.classList.add("revealed")), 1200);
     }
 
-    // ── Thumbnail loading (og:image, with graceful placeholder fallback) ────────
+    // ── Thumbnail loading (og:image with proxy & fallback) ────────────────────
     function loadThumbnail(el, link) {
-        if (!link) return;
+        if (!link || el.dataset.loaded) return;
+        el.dataset.loaded = "true";
+
         fetch(`/api/public/og-image?url=${encodeURIComponent(link)}`)
             .then(res => res.ok ? res.json() : null)
             .then(data => {
                 if (data && data.image_url) {
-                    el.style.backgroundImage = `url(${safeUrl(data.image_url)})`;
-                    el.classList.add("has-image");
+                    const proxyUrl = `/api/public/og-image-proxy?url=${encodeURIComponent(data.image_url)}`;
+                    const img = new Image();
+                    img.onload = () => {
+                        el.style.backgroundImage = `url("${proxyUrl}")`;
+                        el.classList.add("has-image");
+                    };
+                    img.onerror = () => {
+                        el.style.backgroundImage = `url("${safeUrl(data.image_url)}")`;
+                        el.classList.add("has-image");
+                    };
+                    img.src = proxyUrl;
                 }
             })
             .catch(() => { /* keep placeholder */ });
+    }
+
+    function loadThumbnails(container = document) {
+        const thumbs = (container || document).querySelectorAll(".thumb[data-link]");
+        thumbs.forEach(el => {
+            loadThumbnail(el, el.dataset.link);
+        });
     }
 
     // ── Rendering ─────────────────────────────────────────────────────────────
@@ -447,6 +465,7 @@
 
             showState("content");
             initReveal();
+            loadThumbnails(document);
             initInfiniteTimeline();
             initRawArticleStream();
         })
@@ -541,6 +560,7 @@
                 }
 
                 container.appendChild(sectionEl);
+                loadThumbnails(sectionEl);
             } catch (err) {
                 hasMore = false;
             } finally {

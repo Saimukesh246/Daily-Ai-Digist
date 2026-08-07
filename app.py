@@ -641,10 +641,8 @@ def _fetch_og_image(url: str) -> dict:
         return _og_cache[url]
     result = {"image_url": "", "title": ""}
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; AiDigestBot/1.0)"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         next_url = url
-        # Validate and follow redirects manually (each hop re-checked) so a redirect
-        # can't be used to bypass the SSRF guard after the initial URL passes it.
         for _ in range(5):
             assert_public_http_url(next_url)
             resp = _requests.get(next_url, headers=headers, timeout=6, allow_redirects=False)
@@ -653,11 +651,22 @@ def _fetch_og_image(url: str) -> dict:
                 continue
             break
         soup = _BeautifulSoup(resp.text, "html.parser")
-        for attr, val in [("property", "og:image"), ("name", "twitter:image"), ("property", "twitter:image")]:
+        for attr, val in [("property", "og:image"), ("name", "twitter:image"), ("property", "twitter:image"), ("name", "og:image")]:
             tag = soup.find("meta", {attr: val})
             if tag and tag.get("content"):
-                result["image_url"] = tag["content"]
+                img_val = tag["content"].strip()
+                if img_val.startswith("//"):
+                    img_val = "https:" + img_val
+                result["image_url"] = urllib.parse.urljoin(next_url, img_val)
                 break
+        if not result["image_url"]:
+            link_tag = soup.find("link", {"rel": "image_src"})
+            if link_tag and link_tag.get("href"):
+                img_val = link_tag["href"].strip()
+                if img_val.startswith("//"):
+                    img_val = "https:" + img_val
+                result["image_url"] = urllib.parse.urljoin(next_url, img_val)
+
         for attr, val in [("property", "og:title"), ("name", "twitter:title"), ("property", "twitter:title")]:
             tag = soup.find("meta", {attr: val})
             if tag and tag.get("content"):
@@ -674,6 +683,24 @@ def _fetch_og_image(url: str) -> dict:
 @app.get("/api/og-image")
 async def get_og_image(url: str, _user: dict = Depends(require_auth)):
     return _fetch_og_image(url)
+
+
+@app.get("/api/public/og-image-proxy")
+@limiter.limit("60/minute")
+async def public_og_image_proxy(request: Request, url: str):
+    """Proxies and streams external image data to bypass CORS/hotlinking restrictions."""
+    try:
+        assert_public_http_url(url)
+        resp = _requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8, stream=True)
+        if resp.status_code == 200 and "image" in resp.headers.get("Content-Type", ""):
+            return Response(
+                content=resp.content,
+                media_type=resp.headers.get("Content-Type", "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=86400"}
+            )
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail="Image proxy failed.")
 
 
 @app.get("/api/digests")
