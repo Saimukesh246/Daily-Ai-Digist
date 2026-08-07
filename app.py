@@ -1251,8 +1251,12 @@ def run_scheduled_tasks():
 def start_hourly_scheduler():
     """In-process fallback loop — only useful while the process happens to stay
     alive (e.g. always-on hosts, or a Render instance kept warm by traffic).
-    On hosts that sleep when idle, rely on the external /api/cron/hourly trigger
-    instead, since this thread dies along with the process."""
+    On serverless environments like Vercel, rely on the external /api/cron/hourly
+    trigger instead."""
+    if os.environ.get("VERCEL") or os.environ.get("SERVERLESS") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        logger.info("Serverless environment detected (VERCEL). Skipping in-process daemon thread.")
+        return
+
     def scheduler_loop():
         logger.info("Hourly background scheduler daemon started.")
         while True:
