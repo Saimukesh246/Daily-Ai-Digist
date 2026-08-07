@@ -96,12 +96,14 @@ button { font-family: inherit; }
 .main-nav {
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 20px;
     font-size: 11.5px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
     color: var(--muted);
+    flex-wrap: nowrap;
+    white-space: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -112,7 +114,7 @@ button { font-family: inherit; }
     display: none;
 }
 
-.main-nav a { color: var(--muted); white-space: nowrap; transition: color .2s; }
+.main-nav a { color: var(--muted); white-space: nowrap; flex-shrink: 0; transition: color .2s; }
 .main-nav a:hover { color: var(--fg); }
 
 .header-actions { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
