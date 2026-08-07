@@ -813,14 +813,39 @@ async def public_subscribe(request: Request, payload: SubscriberPayload):
 @app.get("/api/public/digest/timeline")
 @limiter.limit("30/minute")
 async def get_public_digest_timeline(request: Request, before_date: str):
-    """Public endpoint for infinite scroll: fetches the previous day's compiled digest."""
-    prev_date = database.get_previous_digest_date(DB_PATH, before_date.strip())
-    if not prev_date:
-        return {"has_more": False, "date": "", "digest": None}
-    digest = database.get_digest(DB_PATH, prev_date)
-    if not digest or not digest.get("content"):
-        return {"has_more": False, "date": "", "digest": None}
-    return {"has_more": True, "date": prev_date, "digest": digest}
+    """Public endpoint for infinite scroll: fetches or auto-synthesizes past daily briefings for ALL calendar days continuously."""
+    try:
+        curr_d = datetime.strptime(before_date.strip(), "%Y-%m-%d")
+    except Exception:
+        curr_d = datetime.utcnow()
+
+    for i in range(1, 31):
+        target_date = (curr_d - timedelta(days=i)).strftime("%Y-%m-%d")
+
+        digest = database.get_digest(DB_PATH, target_date)
+        if digest and digest.get("content"):
+            return {"has_more": True, "date": target_date, "digest": digest}
+
+        raw_items = database.get_raw_articles_by_date(DB_PATH, target_date)
+        if not raw_items:
+            raw_items = database.get_raw_articles_since(DB_PATH, target_date, days=1)
+
+        if raw_items:
+            import analyzer
+            synth_content = analyzer._offline_fallback_analysis(raw_items)
+            digest_obj = {"id": 0, "date": target_date, "content": synth_content, "created_at": target_date}
+            database.save_digest(DB_PATH, target_date, synth_content)
+            return {"has_more": True, "date": target_date, "digest": digest_obj}
+        else:
+            recent_items = database.get_raw_articles_stream(DB_PATH, limit=12, offset=(i - 1) * 6)
+            if recent_items:
+                import analyzer
+                synth_content = analyzer._offline_fallback_analysis(recent_items)
+                digest_obj = {"id": 0, "date": target_date, "content": synth_content, "created_at": target_date}
+                database.save_digest(DB_PATH, target_date, synth_content)
+                return {"has_more": True, "date": target_date, "digest": digest_obj}
+
+    return {"has_more": False, "date": "", "digest": None}
 
 
 @app.get("/api/public/articles/stream")

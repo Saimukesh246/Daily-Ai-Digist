@@ -921,3 +921,18 @@ def get_raw_articles_stream(db_path, limit=15, offset=0, source_filter=None):
     finally:
         release_db_connection(conn)
 
+
+def get_raw_articles_by_date(db_path, date_str):
+    """Retrieves all raw articles for a given date string or matching fetched_at date prefix."""
+    conn = get_db_connection()
+    try:
+        cursor = _dict_cursor(conn)
+        cursor.execute(
+            "SELECT * FROM raw_articles WHERE date = %s OR fetched_at LIKE %s ORDER BY id DESC",
+            (date_str, f"{date_str}%")
+        )
+        return [dict(r) for r in cursor.fetchall()]
+    finally:
+        release_db_connection(conn)
+
+
