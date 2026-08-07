@@ -146,6 +146,34 @@
                 </section>
 
             </div>
+
+            <!-- Infinite Timeline Stream (Past Daily Briefings) -->
+            <div id="timeline-stream-container"></div>
+            <div id="timeline-sentinel" class="stream-sentinel"></div>
+
+            <!-- Infinite Raw Article Stream -->
+            <section class="section raw-stream-section" id="raw-stream-section" data-reveal>
+                <div class="section-head raw-stream-head">
+                    <h2 id="raw-stream-heading">Live Intelligence Stream</h2>
+                    <p class="stream-subtitle">Continuous feed of raw articles, papers, and repositories indexed across 7+ live sources.</p>
+                </div>
+
+                <div class="stream-filters" id="stream-filters">
+                    <button class="filter-pill active" data-source="all">All Sources</button>
+                    <button class="filter-pill" data-source="Hacker News">Hacker News</button>
+                    <button class="filter-pill" data-source="Reddit">Reddit</button>
+                    <button class="filter-pill" data-source="Arxiv">Arxiv Papers</button>
+                    <button class="filter-pill" data-source="GitHub">GitHub Repos</button>
+                    <button class="filter-pill" data-source="Product Hunt">Product Hunt</button>
+                    <button class="filter-pill" data-source="Lab Blogs">Lab Blogs</button>
+                </div>
+
+                <div class="raw-stream-grid" id="raw-stream-grid"></div>
+                <div id="raw-stream-sentinel" class="stream-sentinel">
+                    <span class="stream-loading-text">Loading continuous intelligence feed...</span>
+                </div>
+            </section>
+
         </div>
     </main>
 

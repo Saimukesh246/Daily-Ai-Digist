@@ -327,6 +327,8 @@
 
             showState("content");
             initReveal();
+            initInfiniteTimeline();
+            initRawArticleStream();
         })
         .catch(() => showState("state-error"));
 
@@ -362,4 +364,169 @@
             btn.disabled = false;
         }
     });
+
+    // ── Infinite Timeline (Past Daily Briefings) ────────────────────────────
+    function initInfiniteTimeline() {
+        const sentinel = document.getElementById("timeline-sentinel");
+        const container = document.getElementById("timeline-stream-container");
+        if (!sentinel || !container) return;
+
+        let loading = false;
+        let hasMore = true;
+        let lastDate = window.__digestDate || new Date().toISOString().split("T")[0];
+
+        async function loadNextTimelineDate() {
+            if (loading || !hasMore) return;
+            loading = true;
+            try {
+                const res = await fetch(`/api/public/digest/timeline?before_date=${encodeURIComponent(lastDate)}`);
+                if (!res.ok) { hasMore = false; return; }
+                const data = await res.json();
+                if (!data.has_more || !data.digest) {
+                    hasMore = false;
+                    sentinel.style.display = "none";
+                    return;
+                }
+
+                lastDate = data.date;
+                const d = data.digest;
+                const dateLabel = formatDate(d.date);
+
+                const sectionEl = document.createElement("section");
+                sectionEl.className = "timeline-day-block";
+                sectionEl.innerHTML = `
+                    <div class="timeline-date-divider">
+                        <div class="timeline-date-title">Briefing for ${escapeHtml(dateLabel)}</div>
+                        <span class="timeline-date-badge">${escapeHtml(d.date)}</span>
+                    </div>
+                `;
+
+                const topStories = (d.content && d.content.biggest_news) || [];
+                if (topStories.length > 0) {
+                    const gridEl = document.createElement("div");
+                    gridEl.className = "top-grid";
+                    gridEl.style.marginBottom = "40px";
+                    topStories.forEach((item, idx) => {
+                        const card = document.createElement("a");
+                        card.className = "top-card" + (idx === 0 ? " lead" : "");
+                        card.href = articleUrl("biggest_news", idx);
+                        card.innerHTML = `
+                            <div class="top-card-source">${escapeHtml(item.source || "Top Story")}</div>
+                            <h3 class="top-card-title">${escapeHtml(item.headline || "")}</h3>
+                            <p class="top-card-summary">${escapeHtml(item.summary || "")}</p>
+                        `;
+                        gridEl.appendChild(card);
+                    });
+                    sectionEl.appendChild(gridEl);
+                }
+
+                container.appendChild(sectionEl);
+            } catch (err) {
+                hasMore = false;
+            } finally {
+                loading = false;
+            }
+        }
+
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting) {
+                loadNextTimelineDate();
+            }
+        }, { rootMargin: "300px" });
+
+        observer.observe(sentinel);
+    }
+
+    // ── Infinite Raw Article Stream ─────────────────────────────────────────
+    function initRawArticleStream() {
+        const sentinel = document.getElementById("raw-stream-sentinel");
+        const grid = document.getElementById("raw-stream-grid");
+        const filtersContainer = document.getElementById("stream-filters");
+        if (!sentinel || !grid) return;
+
+        let offset = 0;
+        let limit = 15;
+        let currentSource = "all";
+        let loading = false;
+        let hasMore = true;
+
+        async function loadRawArticles(reset = false) {
+            if (loading || (!hasMore && !reset)) return;
+            if (reset) {
+                offset = 0;
+                hasMore = true;
+                grid.innerHTML = "";
+            }
+            loading = true;
+
+            try {
+                const url = `/api/public/articles/stream?limit=${limit}&offset=${offset}&source=${encodeURIComponent(currentSource === "all" ? "" : currentSource)}`;
+                const res = await fetch(url);
+                if (!res.ok) { hasMore = false; return; }
+                const data = await res.json();
+                const articles = data.articles || [];
+
+                if (articles.length === 0) {
+                    hasMore = false;
+                    if (offset === 0) {
+                        grid.innerHTML = `<div style="grid-column: 1/-1; color: var(--muted); padding: 20px 0;">No articles indexed for this filter yet.</div>`;
+                    }
+                    sentinel.style.display = "none";
+                    return;
+                }
+
+                articles.forEach(art => {
+                    const card = document.createElement("div");
+                    card.className = "raw-card";
+                    const safeLink = safeUrl(art.url);
+                    card.innerHTML = `
+                        <div>
+                            <div class="raw-card-top">
+                                <span class="raw-card-source">${escapeHtml(art.source || "Feed")}</span>
+                                <span class="raw-card-category">${escapeHtml(art.category || "News")}</span>
+                            </div>
+                            <h3 class="raw-card-title">${escapeHtml(art.title || "Untitled")}</h3>
+                            <p class="raw-card-desc">${escapeHtml(art.description || "")}</p>
+                        </div>
+                        <div class="raw-card-footer">
+                            <span>${escapeHtml(art.date || "")}</span>
+                            <a href="${safeLink}" target="_blank" rel="noopener noreferrer" class="raw-card-link">
+                                Read Source <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                            </a>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                });
+
+                offset += articles.length;
+                hasMore = data.has_more;
+                if (!hasMore) {
+                    sentinel.innerHTML = `<span class="stream-loading-text">End of intelligence stream</span>`;
+                }
+            } catch (err) {
+                hasMore = false;
+            } finally {
+                loading = false;
+            }
+        }
+
+        if (filtersContainer) {
+            filtersContainer.querySelectorAll(".filter-pill").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    filtersContainer.querySelectorAll(".filter-pill").forEach(p => p.classList.remove("active"));
+                    btn.classList.add("active");
+                    currentSource = btn.dataset.source || "all";
+                    loadRawArticles(true);
+                });
+            });
+        }
+
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting) {
+                loadRawArticles();
+            }
+        }, { rootMargin: "400px" });
+
+        observer.observe(sentinel);
+    }
 })();

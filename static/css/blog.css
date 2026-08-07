@@ -841,3 +841,181 @@ button { font-family: inherit; }
     border-top: 1px solid var(--border);
     padding-top: 40px;
 }
+
+/* ============================================================
+   Infinite Stream & Timeline
+   ============================================================ */
+.timeline-date-divider {
+    position: sticky;
+    top: 60px;
+    z-index: 30;
+    background: var(--header-bg);
+    backdrop-filter: blur(10px);
+    padding: 16px 0;
+    margin: 60px 0 24px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.timeline-date-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 800;
+    font-size: 22px;
+    color: var(--fg);
+}
+
+.timeline-date-badge {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+}
+
+.raw-stream-section {
+    margin-top: 70px;
+    padding-top: 40px;
+    border-top: 2px solid var(--fg);
+}
+
+.stream-subtitle {
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 6px;
+}
+
+.stream-filters {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 24px 0 32px;
+}
+
+.filter-pill {
+    padding: 7px 16px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s ease;
+}
+
+.filter-pill:hover {
+    border-color: var(--fg);
+    color: var(--fg);
+}
+
+.filter-pill.active {
+    background: var(--fg);
+    color: var(--bg);
+    border-color: var(--fg);
+}
+
+.raw-stream-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 24px;
+}
+
+.raw-card {
+    border: 1px solid var(--border);
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background: var(--bg);
+    transition: border-color .2s, transform .2s;
+}
+
+.raw-card:hover {
+    border-color: var(--fg);
+    transform: translateY(-2px);
+}
+
+.raw-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.raw-card-source {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+}
+
+.raw-card-category {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    color: var(--faint);
+}
+
+.raw-card-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 1.35;
+    color: var(--fg);
+    margin-bottom: 10px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.raw-card-desc {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin-bottom: 16px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.raw-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11.5px;
+    color: var(--faint);
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.raw-card-link {
+    font-weight: 600;
+    color: var(--fg);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.raw-card-link:hover {
+    text-decoration: underline;
+}
+
+.stream-sentinel {
+    padding: 40px 0;
+    text-align: center;
+    font-size: 12px;
+    color: var(--faint);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 600;
+}

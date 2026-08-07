@@ -883,3 +883,41 @@ def delete_expired_sessions(db_path):
         conn.commit()
     finally:
         release_db_connection(conn)
+
+
+def get_previous_digest_date(db_path, before_date):
+    """Finds the latest compiled digest date strictly before before_date."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT date FROM digests WHERE date < %s AND content != '' AND content != '{}' ORDER BY date DESC LIMIT 1",
+            (before_date,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        release_db_connection(conn)
+
+
+def get_raw_articles_stream(db_path, limit=15, offset=0, source_filter=None):
+    """Returns a paginated list of raw articles for the infinite raw stream."""
+    conn = get_db_connection()
+    try:
+        cursor = _dict_cursor(conn)
+        if source_filter and source_filter.strip() and source_filter.lower() != "all":
+            sf = f"%{source_filter.strip().lower()}%"
+            cursor.execute(
+                "SELECT id, date, source, title, description, url, category, fetched_at FROM raw_articles WHERE LOWER(source) LIKE %s ORDER BY id DESC LIMIT %s OFFSET %s",
+                (sf, limit, offset)
+            )
+        else:
+            cursor.execute(
+                "SELECT id, date, source, title, description, url, category, fetched_at FROM raw_articles ORDER BY id DESC LIMIT %s OFFSET %s",
+                (limit, offset)
+            )
+        rows = cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        release_db_connection(conn)
+

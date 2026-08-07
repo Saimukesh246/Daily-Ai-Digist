@@ -783,6 +783,34 @@ async def public_subscribe(request: Request, payload: SubscriberPayload):
     return {"message": f"{payload.email} added successfully."}
 
 
+@app.get("/api/public/digest/timeline")
+@limiter.limit("30/minute")
+async def get_public_digest_timeline(request: Request, before_date: str):
+    """Public endpoint for infinite scroll: fetches the previous day's compiled digest."""
+    prev_date = database.get_previous_digest_date(DB_PATH, before_date.strip())
+    if not prev_date:
+        return {"has_more": False, "date": "", "digest": None}
+    digest = database.get_digest(DB_PATH, prev_date)
+    if not digest or not digest.get("content"):
+        return {"has_more": False, "date": "", "digest": None}
+    return {"has_more": True, "date": prev_date, "digest": digest}
+
+
+@app.get("/api/public/articles/stream")
+@limiter.limit("40/minute")
+async def get_public_articles_stream(request: Request, limit: int = 15, offset: int = 0, source: str = ""):
+    """Public endpoint for the infinite raw article stream with source filters."""
+    limit = min(max(1, limit), 50)
+    offset = max(0, offset)
+    articles = database.get_raw_articles_stream(DB_PATH, limit=limit, offset=offset, source_filter=source.strip())
+    return {
+        "articles": articles,
+        "offset": offset,
+        "limit": limit,
+        "has_more": len(articles) == limit
+    }
+
+
 @app.post("/api/trigger")
 async def trigger_sync(background_tasks: BackgroundTasks, date: str = None,
                         _user: dict = Depends(require_admin)):
