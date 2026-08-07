@@ -224,10 +224,31 @@
         setTimeout(() => sections.forEach(el => el.classList.add("revealed")), 1200);
     }
 
+    const FALLBACK_TECH_IMAGES = [
+        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1677442136019-21780efad99a?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=80",
+        "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&auto=format&fit=crop&q=80"
+    ];
+
+    function getFallbackImage(link) {
+        let hash = 0;
+        for (let i = 0; i < (link || "").length; i++) {
+            hash = ((hash << 5) - hash) + link.charCodeAt(i);
+            hash |= 0;
+        }
+        const idx = Math.abs(hash) % FALLBACK_TECH_IMAGES.length;
+        return FALLBACK_TECH_IMAGES[idx];
+    }
+
     // ── Thumbnail loading (og:image with proxy & fallback) ────────────────────
     function loadThumbnail(el, link) {
         if (!link || el.dataset.loaded) return;
         el.dataset.loaded = "true";
+
+        const fallbackUrl = getFallbackImage(link);
 
         fetch(`/api/public/og-image?url=${encodeURIComponent(link)}`)
             .then(res => res.ok ? res.json() : null)
@@ -240,13 +261,27 @@
                         el.classList.add("has-image");
                     };
                     img.onerror = () => {
-                        el.style.backgroundImage = `url("${safeUrl(data.image_url)}")`;
-                        el.classList.add("has-image");
+                        const directImg = new Image();
+                        directImg.onload = () => {
+                            el.style.backgroundImage = `url("${safeUrl(data.image_url)}")`;
+                            el.classList.add("has-image");
+                        };
+                        directImg.onerror = () => {
+                            el.style.backgroundImage = `url("${fallbackUrl}")`;
+                            el.classList.add("has-image");
+                        };
+                        directImg.src = safeUrl(data.image_url);
                     };
                     img.src = proxyUrl;
+                } else {
+                    el.style.backgroundImage = `url("${fallbackUrl}")`;
+                    el.classList.add("has-image");
                 }
             })
-            .catch(() => { /* keep placeholder */ });
+            .catch(() => {
+                el.style.backgroundImage = `url("${fallbackUrl}")`;
+                el.classList.add("has-image");
+            });
     }
 
     function loadThumbnails(container = document) {

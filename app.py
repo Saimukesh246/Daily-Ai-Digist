@@ -668,6 +668,15 @@ def _fetch_og_image(url: str) -> dict:
                     img_val = "https:" + img_val
                 result["image_url"] = urllib.parse.urljoin(next_url, img_val)
 
+        if not result["image_url"]:
+            for img_tag in soup.find_all("img", src=True):
+                src = img_tag.get("src", "").strip()
+                if src and not src.startswith("data:") and any(ext in src.lower() for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]):
+                    if src.startswith("//"):
+                        src = "https:" + src
+                    result["image_url"] = urllib.parse.urljoin(next_url, src)
+                    break
+
         for attr, val in [("property", "og:title"), ("name", "twitter:title"), ("property", "twitter:title")]:
             tag = soup.find("meta", {attr: val})
             if tag and tag.get("content"):
@@ -692,11 +701,18 @@ async def public_og_image_proxy(request: Request, url: str):
     """Proxies and streams external image data to bypass CORS/hotlinking restrictions."""
     try:
         assert_public_http_url(url)
-        resp = _requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8, stream=True)
-        if resp.status_code == 200 and "image" in resp.headers.get("Content-Type", ""):
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        }
+        resp = _requests.get(url, headers=headers, timeout=8, stream=True)
+        if resp.status_code == 200:
+            ct = resp.headers.get("Content-Type", "image/jpeg")
+            if not ct or "text/html" in ct:
+                ct = "image/jpeg"
             return Response(
                 content=resp.content,
-                media_type=resp.headers.get("Content-Type", "image/jpeg"),
+                media_type=ct,
                 headers={"Cache-Control": "public, max-age=86400"}
             )
     except Exception:
