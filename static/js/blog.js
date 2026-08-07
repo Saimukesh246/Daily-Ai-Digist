@@ -2,6 +2,126 @@
     "use strict";
 
     const THEME_KEY = "aidigest_blog_theme";
+    const BOOKMARKS_KEY = "aidigest_blog_bookmarks";
+
+    function getBookmarks() {
+        try { return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || "[]"); }
+        catch (e) { return []; }
+    }
+
+    function isBookmarked(url) {
+        if (!url) return false;
+        return getBookmarks().some(b => b.url === url);
+    }
+
+    function toggleBookmark(item) {
+        if (!item || !item.url) return;
+        let list = getBookmarks();
+        const idx = list.findIndex(b => b.url === item.url);
+        if (idx >= 0) {
+            list.splice(idx, 1);
+        } else {
+            list.unshift({
+                url: item.url,
+                title: item.title || "Untitled Article",
+                source: item.source || "AI Digest",
+                date: item.date || new Date().toISOString().split("T")[0],
+                savedAt: new Date().toISOString()
+            });
+        }
+        localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(list));
+        updateBookmarkUI();
+    }
+
+    function updateBookmarkUI() {
+        const list = getBookmarks();
+        const badge = document.getElementById("saved-badge");
+        const pill = document.getElementById("saved-count-pill");
+        const emptyMsg = document.getElementById("saved-empty-msg");
+        const itemsList = document.getElementById("saved-items-list");
+        const foot = document.getElementById("saved-drawer-foot");
+
+        if (badge) {
+            badge.textContent = list.length;
+            badge.hidden = (list.length === 0);
+        }
+        if (pill) pill.textContent = list.length;
+        if (foot) foot.hidden = (list.length === 0);
+
+        if (itemsList) {
+            if (list.length === 0) {
+                itemsList.innerHTML = "";
+                if (emptyMsg) emptyMsg.hidden = false;
+            } else {
+                if (emptyMsg) emptyMsg.hidden = true;
+                itemsList.innerHTML = list.map(item => `
+                    <div class="saved-item-card">
+                        <div class="saved-item-top">
+                            <span class="saved-item-source">${escapeHtml(item.source)}</span>
+                            <button class="saved-item-remove" data-url="${escapeHtml(item.url)}" title="Remove bookmark">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                        <a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer" class="saved-item-title">
+                            ${escapeHtml(item.title)}
+                        </a>
+                        <div style="font-size: 11px; color: var(--faint);">${escapeHtml(item.date || "")}</div>
+                    </div>
+                `).join("");
+
+                itemsList.querySelectorAll(".saved-item-remove").forEach(btn => {
+                    btn.addEventListener("click", (e) => {
+                        e.preventDefault();
+                        toggleBookmark({ url: btn.dataset.url });
+                    });
+                });
+            }
+        }
+
+        document.querySelectorAll(".card-bookmark-btn").forEach(btn => {
+            const url = btn.dataset.url;
+            const active = isBookmarked(url);
+            btn.classList.toggle("bookmarked", active);
+            btn.innerHTML = active ? '<i class="fa-solid fa-bookmark"></i>' : '<i class="fa-regular fa-bookmark"></i>';
+        });
+    }
+
+    // ── Reading List Drawer ──────────────────────────────────────────────────
+    (function initSavedDrawer() {
+        const toggleBtn = document.getElementById("saved-toggle-btn");
+        const backdrop = document.getElementById("saved-drawer-backdrop");
+        const drawer = document.getElementById("saved-drawer");
+        const closeBtn = document.getElementById("drawer-close-btn");
+        const clearBtn = document.getElementById("clear-saved-btn");
+
+        if (!toggleBtn || !drawer) return;
+
+        function openDrawer() {
+            drawer.removeAttribute("hidden");
+            if (backdrop) backdrop.removeAttribute("hidden");
+            updateBookmarkUI();
+        }
+
+        function closeDrawer() {
+            drawer.setAttribute("hidden", "");
+            if (backdrop) backdrop.setAttribute("hidden", "");
+        }
+
+        toggleBtn.addEventListener("click", openDrawer);
+        if (closeBtn) closeBtn.addEventListener("click", closeDrawer);
+        if (backdrop) backdrop.addEventListener("click", closeDrawer);
+
+        if (clearBtn) {
+            clearBtn.addEventListener("click", () => {
+                if (confirm("Remove all saved articles from your reading list?")) {
+                    localStorage.setItem(BOOKMARKS_KEY, JSON.stringify([]));
+                    updateBookmarkUI();
+                }
+            });
+        }
+
+        updateBookmarkUI();
+    })();
 
     function escapeHtml(value) {
         if (value === null || value === undefined) return "";
@@ -479,11 +599,18 @@
                     const card = document.createElement("div");
                     card.className = "raw-card";
                     const safeLink = safeUrl(art.url);
+                    const saved = isBookmarked(art.url);
+                    const bmIcon = saved ? "fa-solid fa-bookmark" : "fa-regular fa-bookmark";
                     card.innerHTML = `
                         <div>
                             <div class="raw-card-top">
                                 <span class="raw-card-source">${escapeHtml(art.source || "Feed")}</span>
-                                <span class="raw-card-category">${escapeHtml(art.category || "News")}</span>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span class="raw-card-category">${escapeHtml(art.category || "News")}</span>
+                                    <button class="card-bookmark-btn ${saved ? "bookmarked" : ""}" data-url="${escapeHtml(art.url)}" title="Save to reading list">
+                                        <i class="${bmIcon}"></i>
+                                    </button>
+                                </div>
                             </div>
                             <h3 class="raw-card-title">${escapeHtml(art.title || "Untitled")}</h3>
                             <p class="raw-card-desc">${escapeHtml(art.description || "")}</p>
@@ -495,6 +622,13 @@
                             </a>
                         </div>
                     `;
+                    const bmBtn = card.querySelector(".card-bookmark-btn");
+                    if (bmBtn) {
+                        bmBtn.addEventListener("click", (e) => {
+                            e.preventDefault();
+                            toggleBookmark({ url: art.url, title: art.title, source: art.source, date: art.date });
+                        });
+                    }
                     grid.appendChild(card);
                 });
 

@@ -22,7 +22,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/blog.css?v=2">
+    <link rel="stylesheet" href="/static/css/blog.css?v=3">
 
     <!-- Applied before first paint so the correct theme renders immediately (no flash). -->
     <script>
@@ -51,6 +51,10 @@
                 <a href="#what-to-watch">What to Watch</a>
             </nav>
             <div class="header-actions">
+                <button class="icon-btn saved-toggle-btn" id="saved-toggle-btn" aria-label="Reading list" title="Saved Reading List">
+                    <i class="fa-regular fa-bookmark"></i>
+                    <span class="saved-badge" id="saved-badge" hidden>0</span>
+                </button>
                 <button class="icon-btn theme-toggle" id="theme-toggle" aria-label="Toggle dark mode" title="Toggle theme">
                     <i class="fa-solid fa-moon" id="theme-icon"></i>
                 </button>
@@ -188,6 +192,22 @@
         </div>
     </footer>
 
-    <script src="/static/js/blog.js?v=2"></script>
+    <!-- Reading List Slide-out Drawer -->
+    <div class="saved-drawer-backdrop" id="saved-drawer-backdrop" hidden></div>
+    <aside class="saved-drawer" id="saved-drawer" hidden>
+        <div class="saved-drawer-head">
+            <h3><i class="fa-regular fa-bookmark"></i> Reading List <span class="saved-count-pill" id="saved-count-pill">0</span></h3>
+            <button class="drawer-close-btn" id="drawer-close-btn" aria-label="Close reading list">&times;</button>
+        </div>
+        <div class="saved-drawer-body" id="saved-drawer-body">
+            <div class="saved-empty-msg" id="saved-empty-msg">No saved articles yet. Click the bookmark icon on any story to save it for later.</div>
+            <div class="saved-items-list" id="saved-items-list"></div>
+        </div>
+        <div class="saved-drawer-foot" id="saved-drawer-foot" hidden>
+            <button class="clear-saved-btn" id="clear-saved-btn">Clear All Saved</button>
+        </div>
+    </aside>
+
+    <script src="/static/js/blog.js?v=3"></script>
 </body>
 </html>
