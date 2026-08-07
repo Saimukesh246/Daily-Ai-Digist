@@ -119,7 +119,10 @@ async function apiFetch(url, options = {}) {
 
     async function checkExistingSession() {
         const token = getToken();
-        if (!token) return;
+        if (!token) {
+            showApp({ email: "guest@aidigest.local", name: "Guest Reader", role: "viewer" });
+            return;
+        }
         try {
             const res = await apiFetch("/api/auth/me");
             if (res.ok) {
@@ -128,9 +131,11 @@ async function apiFetch(url, options = {}) {
                 showApp(user);
             } else {
                 clearAuth();
+                showApp({ email: "guest@aidigest.local", name: "Guest Reader", role: "viewer" });
             }
         } catch {
             clearAuth();
+            showApp({ email: "guest@aidigest.local", name: "Guest Reader", role: "viewer" });
         }
     }
 

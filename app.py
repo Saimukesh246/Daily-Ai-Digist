@@ -447,6 +447,7 @@ async def serve_blog(request: Request):
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
+@app.get("/dashboard/", response_class=HTMLResponse)
 async def serve_dashboard():
     """Authenticated dashboard SPA — sync controls, settings, sources, subscribers."""
     index_path = os.path.join(STATIC_DIR, "index.html")
