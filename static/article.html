@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Digest</title>
+    <meta name="description" content="AI Digest — Daily Intelligence Briefing">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/blog.css?v=1">
+
+    <script>
+    (function () {
+        var saved = localStorage.getItem("aidigest_blog_theme");
+        var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+    })();
+    </script>
+</head>
+<body>
+
+    <header class="article-header">
+        <div class="article-header-inner">
+            <a href="/" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to AI Digest</a>
+            <div class="article-header-right">
+                <div class="article-wordmark">AI Digest</div>
+                <button class="icon-btn theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+                    <i class="fa-solid fa-moon" id="theme-icon"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="article-main">
+        <div id="state-loading" class="state-msg">Loading article…</div>
+        <div id="state-error" class="state-msg" hidden>Couldn't find that article.</div>
+
+        <article id="article-content" hidden>
+            <div class="article-kicker" id="article-kicker"></div>
+            <h1 class="article-headline" id="article-headline"></h1>
+            <div class="article-dek" id="article-dek"></div>
+            <div class="article-meta" id="article-meta"></div>
+
+            <div class="thumb article-hero" id="article-hero"></div>
+
+            <div class="article-body" id="article-body"></div>
+
+            <div class="article-source" id="article-source" hidden>
+                <a id="article-source-link" href="#" target="_blank" rel="noopener noreferrer">Read the original source <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+            </div>
+        </article>
+
+        <div class="related-section" id="related-section" hidden>
+            <div class="related-heading">More from AI Digest</div>
+            <div class="research-grid" id="related-grid"></div>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <div class="page-inner footer-inner">
+            <div>&copy; <span id="footer-year"></span> AI Digest. Autonomous intelligence briefing.</div>
+        </div>
+    </footer>
+
+    <script src="/static/js/article.js?v=1"></script>
+</body>
+</html>

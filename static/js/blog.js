@@ -35,6 +35,10 @@
         return Math.max(1, Math.round(words / 200)) + " min read";
     }
 
+    function articleUrl(section, index) {
+        return `/article.html?date=${encodeURIComponent(window.__digestDate)}&section=${encodeURIComponent(section)}&index=${index}`;
+    }
+
     // ── Theme toggle ──────────────────────────────────────────────────────────
     (function initTheme() {
         const btn = document.getElementById("theme-toggle");
@@ -122,23 +126,24 @@
 
         let html = `
         <div>
-            <a href="${safeUrl(lead.link)}" target="_blank" rel="noopener noreferrer">
+            <a href="${articleUrl("biggest_news", 0)}">
                 <div class="thumb lead-thumb" data-link="${escapeHtml(lead.link)}"></div>
             </a>
             <div class="breaking-badge">Breaking</div>
-            <a class="lead-headline" href="${safeUrl(lead.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(lead.headline)}</a>
+            <a class="lead-headline" href="${articleUrl("biggest_news", 0)}">${escapeHtml(lead.headline)}</a>
             <div class="lead-dek">${escapeHtml(lead.summary || "")}</div>
         </div>
         <div class="top-sidebar">`;
 
-        sidebar.forEach(item => {
+        sidebar.forEach((item, i) => {
+            const href = articleUrl("biggest_news", i + 1);
             html += `
             <div class="top-sidebar-item">
-                <a href="${safeUrl(item.link)}" target="_blank" rel="noopener noreferrer" style="flex-shrink:0">
+                <a href="${href}" style="flex-shrink:0">
                     <div class="thumb top-sidebar-thumb" data-link="${escapeHtml(item.link)}"></div>
                 </a>
                 <div>
-                    <a class="top-sidebar-headline" href="${safeUrl(item.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.headline)}</a>
+                    <a class="top-sidebar-headline" href="${href}">${escapeHtml(item.headline)}</a>
                     <div class="top-sidebar-dek">${escapeHtml(item.summary || "")}</div>
                 </div>
             </div>`;
@@ -158,14 +163,15 @@
         const grid = document.getElementById(gridId);
         const linkKey = opts.linkKey || "link";
         let html = "";
-        items.forEach(item => {
-            const link = item[linkKey];
+        items.forEach((item, i) => {
+            const thumbSrc = item[linkKey];
+            const href = articleUrl(opts.section, i);
             html += `
             <div>
-                <a href="${safeUrl(link)}" target="_blank" rel="noopener noreferrer">
-                    <div class="thumb research-thumb" data-link="${escapeHtml(link)}"></div>
+                <a href="${href}">
+                    <div class="thumb research-thumb" data-link="${escapeHtml(thumbSrc)}"></div>
                 </a>
-                <a class="research-title" href="${safeUrl(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item[opts.titleKey])}</a>
+                <a class="research-title" href="${href}">${escapeHtml(item[opts.titleKey])}</a>
                 ${opts.dekKey ? `<div class="research-dek">${escapeHtml(item[opts.dekKey] || "")}</div>` : ""}
                 ${opts.categoryKey ? `<div class="category-tag">${escapeHtml(item[opts.categoryKey] || "")}</div>` : ""}
                 ${opts.extraKey ? `<div class="pricing-tag">${escapeHtml(item[opts.extraKey] || "")}</div>` : ""}
@@ -176,22 +182,19 @@
         grid.querySelectorAll(".thumb[data-link]").forEach(el => loadThumbnail(el, el.dataset.link));
     }
 
-    function renderList(containerId, items, titleKey, dekKey) {
-        const container = document.getElementById(containerId);
+    function renderMarket(items) {
+        if (!items.length) return;
+        const container = document.getElementById("market-list");
         let html = "";
-        items.forEach(item => {
+        items.forEach((item, i) => {
+            const href = articleUrl("market_industry", i);
             html += `
             <div class="tm-item">
-                <a class="tm-title" href="${safeUrl(item.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item[titleKey])}</a>
-                <div class="tm-dek">${escapeHtml(item[dekKey] || "")}</div>
+                <a class="tm-title" href="${href}">${escapeHtml(item.headline)}</a>
+                <div class="tm-dek">${escapeHtml(item.summary || "")}</div>
             </div>`;
         });
         container.innerHTML = html;
-    }
-
-    function renderMarket(items) {
-        if (!items.length) return;
-        renderList("market-list", items, "headline", "summary");
         document.getElementById("market").hidden = false;
     }
 
@@ -311,11 +314,11 @@
 
             renderTopStories(content.biggest_news || []);
             renderCardGrid("tools", "tools-grid", (content.discovered_tools || []).slice(0, 6),
-                { titleKey: "tool", categoryKey: "category", dekKey: "what_it_does", extraKey: "pricing" });
+                { section: "discovered_tools", titleKey: "tool", categoryKey: "category", dekKey: "what_it_does", extraKey: "pricing" });
             renderWhatChanged(content.what_changed || []);
             renderWorkflows(content.trending_workflows || []);
             renderCardGrid("research", "research-grid", (content.open_source_research || []).slice(0, 4),
-                { titleKey: "title", categoryKey: "category" });
+                { section: "open_source_research", titleKey: "title", categoryKey: "category" });
             renderMarket(content.market_industry || []);
             renderQuickTakes(content.quick_takes || []);
             renderWhatToWatch(content.what_to_watch || []);

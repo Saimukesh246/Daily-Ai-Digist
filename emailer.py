@@ -500,3 +500,129 @@ Daily AI Digest | Automated Security Notification
         logger.error(f"Failed to send login confirmation to {to_email}: {exc}")
         return False
 
+
+def send_subscribe_confirmation_email(smtp_settings, to_email, to_name=""):
+    """
+    Sends a welcome/confirmation email after someone subscribes to the daily
+    digest (from the public blog's subscribe form or the admin dashboard).
+
+    smtp_settings dict keys: host, port, user, password, from_name
+    Returns: True on success, False on failure
+    """
+    if not smtp_settings.get("host") or not smtp_settings.get("user"):
+        logger.warning("Subscribe confirmation email skipped — SMTP not configured.")
+        return False
+
+    display_name = to_name or to_email.split("@")[0]
+    subject = "You're subscribed — Daily AI Digest"
+
+    html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Subscription Confirmed</title>
+</head>
+<body style="margin:0;padding:0;background-color:#060913;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#060913;">
+<tr><td align="center" style="padding:32px 12px;">
+<table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">
+
+  <!-- HEADER -->
+  <tr><td style="background:linear-gradient(135deg,#1a1040 0%,#0e1a35 100%);border-radius:16px 16px 0 0;padding:28px 36px;border-bottom:2px solid rgba(0,240,255,0.2);">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td>
+        <p style="color:#00f0ff;font-size:10px;text-transform:uppercase;letter-spacing:3px;margin:0 0 6px 0;font-family:Arial,Helvetica,sans-serif;">DAILY AI DIGEST</p>
+        <p style="color:#f1f5f9;font-size:22px;font-weight:900;margin:0;font-family:Arial,Helvetica,sans-serif;">Subscription Confirmed</p>
+      </td>
+      <td align="right" valign="middle">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#00ffaa,#00f0ff);display:flex;align-items:center;justify-content:center;font-size:24px;text-align:center;line-height:48px;">&#9993;</div>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- WELCOME -->
+  <tr><td style="background:#0b1e15;padding:28px 36px;border-left:3px solid #00ffaa;">
+    <p style="color:#00ffaa;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:0 0 8px 0;font-family:Arial,Helvetica,sans-serif;">YOU'RE ON THE LIST</p>
+    <h2 style="color:#f1f5f9;font-size:20px;font-weight:700;margin:0 0 10px 0;line-height:1.4;font-family:Arial,Helvetica,sans-serif;">
+      Welcome, {display_name}!
+    </h2>
+    <p style="color:#94a3b8;font-size:14px;margin:0;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+      You'll now receive the <strong style="color:#f1f5f9;">Daily AI Digest</strong> straight to <strong style="color:#f1f5f9;">{to_email}</strong> — the biggest AI news, new tools, research, and market movement, synthesized daily.
+    </p>
+  </td></tr>
+
+  <!-- CTA -->
+  <tr><td style="background:linear-gradient(135deg,#1a1040 0%,#0e1a35 100%);padding:24px 36px;text-align:center;border-top:1px solid rgba(181,95,230,0.2);">
+    <p style="color:#94a3b8;font-size:13px;margin:0 0 14px 0;font-family:Arial,Helvetica,sans-serif;">Curious what today looks like?</p>
+    <a href="{_APP_URL}" style="display:inline-block;background:linear-gradient(135deg,#b55fe6,#00f0ff);color:#060913;font-weight:700;font-size:14px;text-decoration:none;padding:12px 28px;border-radius:8px;font-family:Arial,Helvetica,sans-serif;">Read Today's Briefing &#8594;</a>
+  </td></tr>
+
+  <!-- FOOTER -->
+  <tr><td style="background:#060913;padding:16px 36px;border-radius:0 0 16px 16px;border-top:1px solid rgba(255,255,255,0.04);">
+    <p style="color:#334155;font-size:11px;text-align:center;margin:0;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+      Daily AI Digest &bull; Autonomous AI Intelligence System<br>
+      Didn't sign up for this? You can ignore this email — no further messages will be sent unless you subscribe again.
+    </p>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    plain_body = f"""SUBSCRIPTION CONFIRMED — Daily AI Digest
+{'='*48}
+
+Welcome, {display_name}!
+
+You'll now receive the Daily AI Digest at {to_email} — the biggest AI
+news, new tools, research, and market movement, synthesized daily.
+
+Read today's briefing: {_APP_URL}
+
+Didn't sign up for this? You can ignore this email — no further
+messages will be sent unless you subscribe again.
+
+—
+Daily AI Digest | Automated Notification
+"""
+
+    host      = smtp_settings.get("host", "")
+    port      = int(smtp_settings.get("port", 587))
+    user      = smtp_settings.get("user", "")
+    password  = smtp_settings.get("password", "")
+    from_name = smtp_settings.get("from_name", "Daily AI Digest")
+    from_addr = user
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = formataddr((from_name, from_addr))
+        msg["To"]      = formataddr((display_name, to_email))
+        msg.attach(MIMEText(plain_body, "plain", "utf-8"))
+        msg.attach(MIMEText(html_body,  "html",  "utf-8"))
+
+        if port == 465:
+            ctx    = ssl.create_default_context()
+            server = smtplib.SMTP_SSL(host, port, context=ctx, timeout=20)
+        else:
+            server = smtplib.SMTP(host, port, timeout=20)
+            server.ehlo()
+            if port == 587:
+                server.starttls(context=ssl.create_default_context())
+                server.ehlo()
+
+        if user and password:
+            server.login(user, password)
+
+        server.sendmail(from_addr, [to_email], msg.as_string())
+        server.quit()
+        logger.info(f"Subscribe confirmation email sent to {to_email}")
+        return True
+
+    except Exception as exc:
+        logger.error(f"Failed to send subscribe confirmation to {to_email}: {exc}")
+        return False
+

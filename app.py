@@ -401,8 +401,12 @@ async def healthz():
         return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable", "detail": str(e)})
 
 
+def _esc_attr(value: str) -> str:
+    return (value or "").replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 @app.get("/", response_class=HTMLResponse)
-async def serve_blog():
+async def serve_blog(request: Request):
     """Public, unauthenticated News Blog homepage — the digest's public face."""
     blog_path = os.path.join(STATIC_DIR, "blog.html")
     if not os.path.exists(blog_path):
@@ -413,7 +417,33 @@ async def serve_blog():
         </html>
         """
     with open(blog_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
+        html = f.read()
+
+    # Fill in Open Graph / Twitter Card tags from today's lead story so shared
+    # links render a real preview card instead of generic boilerplate.
+    og_title = "AI Digest — Daily Intelligence Briefing"
+    og_description = "A daily briefing on AI news, research, tools, and market movement — synthesized from 7+ live sources."
+    og_image = ""
+    try:
+        digest = database.get_latest_digest(DB_PATH)
+        biggest_news = (digest or {}).get("content", {}).get("biggest_news") or []
+        if biggest_news:
+            lead = biggest_news[0]
+            og_title = f"{lead['headline']} — AI Digest"
+            og_description = (lead.get("summary") or og_description)[:200]
+            og_image = _fetch_og_image(lead.get("link", "")).get("image_url", "")
+    except Exception:
+        logger.exception("Failed to build OG tags for blog homepage:")
+
+    og_url = os.environ.get("APP_URL") or str(request.base_url).rstrip("/")
+
+    html = (html
+        .replace("{{OG_TITLE}}", _esc_attr(og_title))
+        .replace("{{OG_DESCRIPTION}}", _esc_attr(og_description))
+        .replace("{{OG_URL}}", _esc_attr(og_url))
+        .replace("{{OG_IMAGE}}", _esc_attr(og_image)))
+
+    return HTMLResponse(content=html)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -429,6 +459,68 @@ async def serve_dashboard():
         """
     with open(index_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
+
+
+@app.get("/article.html", response_class=HTMLResponse)
+async def serve_article():
+    """Public article reading view — content is fetched client-side from
+    /api/public/article using the ?date=&section=&index= query params."""
+    article_path = os.path.join(STATIC_DIR, "article.html")
+    with open(article_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+
+@app.get("/rss.xml")
+async def serve_rss():
+    """Public RSS 2.0 feed of the latest digest — Top Stories, Research, Tools, Market."""
+    from xml.sax.saxutils import escape as _xml_escape
+    from email.utils import format_datetime as _rfc822
+
+    digest = database.get_latest_digest(DB_PATH)
+    site_url = os.environ.get("APP_URL", "")
+    content = (digest or {}).get("content", {})
+
+    try:
+        pub_date = datetime.strptime(digest["date"], "%Y-%m-%d") if digest else datetime.utcnow()
+    except Exception:
+        pub_date = datetime.utcnow()
+
+    entries = []
+    for item in (content.get("biggest_news") or []):
+        entries.append(("Top Stories", item.get("headline", ""), item.get("summary", ""), item.get("link", "")))
+    for item in (content.get("open_source_research") or []):
+        entries.append((item.get("category", "Research"), item.get("title", ""), item.get("summary", ""), item.get("link", "")))
+    for item in (content.get("discovered_tools") or []):
+        entries.append(("New AI Tools", item.get("tool", ""), item.get("what_it_does", ""), item.get("link", "")))
+    for item in (content.get("market_industry") or []):
+        entries.append((item.get("category", "Market"), item.get("headline", ""), item.get("summary", ""), item.get("link", "")))
+
+    items_xml = ""
+    for category, title, description, link in entries:
+        if not title or not link:
+            continue
+        items_xml += f"""
+    <item>
+      <title>{_xml_escape(title)}</title>
+      <link>{_xml_escape(link)}</link>
+      <guid isPermaLink="false">{_xml_escape(link)}</guid>
+      <category>{_xml_escape(category)}</category>
+      <description>{_xml_escape(description)}</description>
+      <pubDate>{_rfc822(pub_date)}</pubDate>
+    </item>"""
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <title>AI Digest — Daily Intelligence Briefing</title>
+  <link>{_xml_escape(site_url)}</link>
+  <description>A daily briefing on AI news, research, tools, and market movement — synthesized from 7+ live sources.</description>
+  <language>en-us</language>
+  <lastBuildDate>{_rfc822(pub_date)}</lastBuildDate>{items_xml}
+</channel>
+</rss>"""
+
+    return Response(content=xml, media_type="application/rss+xml")
 
 # ---------------------------------------------------------------------------
 # AUTH ENDPOINTS
@@ -619,6 +711,52 @@ async def get_public_latest_digest():
     return digest
 
 
+# Sections with individually-linkable items (i.e. each entry has its own
+# outbound `link`) — these are the ones the blog gives an internal reading
+# view to. Sections like what_changed/quick_takes have no per-item link.
+_ARTICLE_SECTIONS = {
+    "biggest_news":         {"title_key": "headline", "label": "Top Stories"},
+    "discovered_tools":     {"title_key": "tool",      "label": "New AI Tools Discovered"},
+    "open_source_research": {"title_key": "title",     "label": "Open Source & Technical Research"},
+    "market_industry":      {"title_key": "headline",  "label": "Market & Industry Movements"},
+}
+
+
+@app.get("/api/public/article")
+async def get_public_article(date: str, section: str, index: int):
+    if section not in _ARTICLE_SECTIONS:
+        raise HTTPException(status_code=400, detail="Unknown section.")
+    digest = database.get_digest(DB_PATH, date)
+    if not digest:
+        raise HTTPException(status_code=404, detail="Digest not found for that date.")
+    items = digest.get("content", {}).get(section) or []
+    if index < 0 or index >= len(items):
+        raise HTTPException(status_code=404, detail="Article not found.")
+
+    related = []
+    for sec, meta in _ARTICLE_SECTIONS.items():
+        if sec == section:
+            continue
+        sec_items = digest.get("content", {}).get(sec) or []
+        if sec_items:
+            related.append({
+                "section": sec,
+                "index": 0,
+                "label": meta["label"],
+                "title": sec_items[0].get(meta["title_key"], ""),
+                "link": sec_items[0].get("link", ""),
+            })
+
+    return {
+        "date": date,
+        "section": section,
+        "label": _ARTICLE_SECTIONS[section]["label"],
+        "index": index,
+        "item": items[index],
+        "related": related,
+    }
+
+
 @app.get("/api/public/og-image")
 @limiter.limit("30/minute")
 async def get_public_og_image(request: Request, url: str):
@@ -634,6 +772,14 @@ async def public_subscribe(request: Request, payload: SubscriberPayload):
     added = database.add_subscriber(DB_PATH, payload.email, payload.name)
     if not added:
         raise HTTPException(status_code=409, detail=f"{payload.email} is already subscribed.")
+
+    smtp = get_smtp_settings()
+    threading.Thread(
+        target=emailer.send_subscribe_confirmation_email,
+        args=(smtp, payload.email, payload.name),
+        daemon=True
+    ).start()
+
     return {"message": f"{payload.email} added successfully."}
 
 
