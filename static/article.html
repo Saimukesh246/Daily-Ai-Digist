@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/blog.css?v=2">
+    <link rel="stylesheet" href="/static/css/blog.css?v=3">
 
     <script>
     (function () {
@@ -78,6 +78,14 @@
 
             <div class="article-body" id="article-body"></div>
 
+            <div class="article-share" id="article-share" hidden>
+                <span class="article-share-label">Share</span>
+                <a class="article-share-btn" id="share-x" href="#" target="_blank" rel="noopener noreferrer" aria-label="Share on X"><i class="fa-brands fa-x-twitter"></i></a>
+                <a class="article-share-btn" id="share-facebook" href="#" target="_blank" rel="noopener noreferrer" aria-label="Share on Facebook"><i class="fa-brands fa-facebook-f"></i></a>
+                <a class="article-share-btn" id="share-linkedin" href="#" target="_blank" rel="noopener noreferrer" aria-label="Share on LinkedIn"><i class="fa-brands fa-linkedin-in"></i></a>
+                <button class="article-share-btn" id="share-copy" type="button" aria-label="Copy link" title="Copy link"><i class="fa-solid fa-link"></i></button>
+            </div>
+
             <div class="article-source" id="article-source" hidden>
                 <a id="article-source-link" href="#" target="_blank" rel="noopener noreferrer">Read the original source <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
             </div>
@@ -95,6 +103,6 @@
         </div>
     </footer>
 
-    <script src="/static/js/article.js?v=2"></script>
+    <script src="/static/js/article.js?v=3"></script>
 </body>
 </html>

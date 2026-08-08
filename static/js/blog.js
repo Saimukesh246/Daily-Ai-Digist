@@ -235,6 +235,205 @@
         }
     })();
 
+    // ── Reading list cross-device sync ──────────────────────────────────────
+    const SYNC_CODE_KEY = "aidigest_sync_code";
+
+    function generateSyncCode() {
+        const bytes = new Uint8Array(9);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, b => b.toString(36)).join("").slice(0, 12);
+    }
+
+    (function initReadingListSync() {
+        const codeRow = document.getElementById("sync-code-row");
+        const codeDisplay = document.getElementById("sync-code-display");
+        const copyBtn = document.getElementById("sync-copy-btn");
+        const generateBtn = document.getElementById("sync-generate-btn");
+        const pushBtn = document.getElementById("sync-push-btn");
+        const pullBtn = document.getElementById("sync-pull-btn");
+        const codeInput = document.getElementById("sync-code-input");
+        const useCodeBtn = document.getElementById("sync-use-code-btn");
+        const msgEl = document.getElementById("sync-msg");
+
+        if (!generateBtn) return;
+
+        function showMsg(text, isError) {
+            msgEl.textContent = text;
+            msgEl.className = "sync-msg " + (isError ? "error" : "success");
+        }
+
+        function refreshUI() {
+            const code = localStorage.getItem(SYNC_CODE_KEY);
+            if (code) {
+                codeRow.hidden = false;
+                codeDisplay.value = code;
+                generateBtn.hidden = true;
+                pushBtn.hidden = false;
+                pullBtn.hidden = false;
+            } else {
+                codeRow.hidden = true;
+                generateBtn.hidden = false;
+                pushBtn.hidden = true;
+                pullBtn.hidden = true;
+            }
+        }
+
+        async function pushToCloud(code) {
+            const res = await fetch(`/api/public/reading-list/${encodeURIComponent(code)}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ bookmarks: getBookmarks() }),
+            });
+            if (!res.ok) throw new Error("Push failed");
+        }
+
+        async function pullFromCloud(code) {
+            const res = await fetch(`/api/public/reading-list/${encodeURIComponent(code)}`);
+            if (!res.ok) throw new Error("Pull failed");
+            const data = await res.json();
+            localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(data.bookmarks || []));
+            updateBookmarkUI();
+        }
+
+        generateBtn.addEventListener("click", async () => {
+            const code = generateSyncCode();
+            try {
+                await pushToCloud(code);
+                localStorage.setItem(SYNC_CODE_KEY, code);
+                refreshUI();
+                showMsg("Sync code created and this device's list uploaded.");
+            } catch (e) {
+                showMsg("Couldn't reach the server — try again.", true);
+            }
+        });
+
+        if (copyBtn) {
+            copyBtn.addEventListener("click", () => {
+                codeDisplay.select();
+                navigator.clipboard && navigator.clipboard.writeText(codeDisplay.value).catch(() => {});
+                showMsg("Code copied.");
+            });
+        }
+
+        if (pushBtn) {
+            pushBtn.addEventListener("click", async () => {
+                const code = localStorage.getItem(SYNC_CODE_KEY);
+                if (!code) return;
+                try {
+                    await pushToCloud(code);
+                    showMsg("This device's reading list uploaded.");
+                } catch (e) {
+                    showMsg("Push failed — try again.", true);
+                }
+            });
+        }
+
+        if (pullBtn) {
+            pullBtn.addEventListener("click", async () => {
+                const code = localStorage.getItem(SYNC_CODE_KEY);
+                if (!code) return;
+                if (!confirm("This replaces the reading list on THIS device with the one saved under your sync code. Continue?")) return;
+                try {
+                    await pullFromCloud(code);
+                    showMsg("Reading list pulled from the cloud.");
+                } catch (e) {
+                    showMsg("Pull failed — try again.", true);
+                }
+            });
+        }
+
+        if (useCodeBtn) {
+            useCodeBtn.addEventListener("click", async () => {
+                const code = codeInput.value.trim();
+                if (!code) return;
+                if (!confirm("This replaces the reading list on THIS device with the one saved under that code. Continue?")) return;
+                try {
+                    await pullFromCloud(code);
+                    localStorage.setItem(SYNC_CODE_KEY, code);
+                    codeInput.value = "";
+                    refreshUI();
+                    showMsg("Synced. This device now shares that reading list.");
+                } catch (e) {
+                    showMsg("Couldn't find or reach that code.", true);
+                }
+            });
+        }
+
+        refreshUI();
+    })();
+
+    // ── Search modal ─────────────────────────────────────────────────────────
+    (function initSearchModal() {
+        const toggleBtn = document.getElementById("search-toggle-btn");
+        const backdrop = document.getElementById("search-backdrop");
+        const modal = document.getElementById("search-modal");
+        const closeBtn = document.getElementById("search-close-btn");
+        const input = document.getElementById("search-input");
+        const results = document.getElementById("search-results");
+        if (!toggleBtn || !modal) return;
+
+        let debounceTimer = null;
+
+        function openModal() {
+            modal.removeAttribute("hidden");
+            backdrop.removeAttribute("hidden");
+            input.focus();
+        }
+
+        function closeModal() {
+            modal.setAttribute("hidden", "");
+            backdrop.setAttribute("hidden", "");
+        }
+
+        function renderResults(items) {
+            if (!items.length) {
+                results.innerHTML = `<div class="search-empty-msg">No matching articles found.</div>`;
+                return;
+            }
+            results.innerHTML = items.map(item => `
+                <a class="search-result-item" href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">
+                    <span class="search-result-source">${escapeHtml(item.source || "")} &middot; ${escapeHtml(item.date || "")}</span>
+                    <span class="search-result-title">${escapeHtml(item.title || "Untitled")}</span>
+                    <div class="search-result-desc">${escapeHtml(item.description || "")}</div>
+                </a>
+            `).join("");
+        }
+
+        async function runSearch(q) {
+            if (!q.trim()) {
+                results.innerHTML = `<div class="search-empty-msg">Start typing to search across every article AI Digest has indexed.</div>`;
+                return;
+            }
+            results.innerHTML = `<div class="search-loading-msg">Searching…</div>`;
+            try {
+                const res = await fetch(`/api/public/search?q=${encodeURIComponent(q)}&limit=30`);
+                if (!res.ok) throw new Error("Search failed");
+                const data = await res.json();
+                renderResults(data.results || []);
+            } catch (e) {
+                results.innerHTML = `<div class="search-empty-msg">Search failed — try again.</div>`;
+            }
+        }
+
+        toggleBtn.addEventListener("click", openModal);
+        if (closeBtn) closeBtn.addEventListener("click", closeModal);
+        if (backdrop) backdrop.addEventListener("click", closeModal);
+
+        input.addEventListener("input", () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => runSearch(input.value), 300);
+        });
+
+        document.addEventListener("keydown", (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+                e.preventDefault();
+                openModal();
+            } else if (e.key === "Escape" && !modal.hasAttribute("hidden")) {
+                closeModal();
+            }
+        });
+    })();
+
     // ── Mobile nav ────────────────────────────────────────────────────────────
     (function initMobileNav() {
         const toggle = document.getElementById("nav-toggle");

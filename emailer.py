@@ -19,7 +19,7 @@ _APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 logger = logging.getLogger("emailer")
 
 
-def build_html_email(digest_content, date_str):
+def build_html_email(digest_content, date_str, unsubscribe_url=""):
     """Converts a digest JSON dict into an email-client-safe HTML string (inline CSS, table layout)."""
     c = digest_content
 
@@ -201,14 +201,15 @@ def build_html_email(digest_content, date_str):
   <!-- CTA -->
   <tr><td style="background:linear-gradient(135deg,#1a1040 0%,#0e1a35 100%);padding:26px 36px;text-align:center;border-top:1px solid rgba(181,95,230,0.25);">
     <p style="color:#94a3b8;font-size:14px;margin:0 0 14px 0;font-family:Arial,Helvetica,sans-serif;">View the full interactive digest with all sections and source links</p>
-    <a href="{_APP_URL}" style="display:inline-block;background:linear-gradient(135deg,#b55fe6,#00f0ff);color:#060913;font-weight:700;font-size:14px;text-decoration:none;padding:12px 28px;border-radius:8px;font-family:Arial,Helvetica,sans-serif;">Open Full Dashboard &#8594;</a>
+    <a href="{_APP_URL}" style="display:inline-block;background:linear-gradient(135deg,#b55fe6,#00f0ff);color:#060913;font-weight:700;font-size:14px;text-decoration:none;padding:12px 28px;border-radius:8px;font-family:Arial,Helvetica,sans-serif;">Read Today's Digest &#8594;</a>
   </td></tr>
 
   <!-- FOOTER -->
   <tr><td style="background:#060913;padding:18px 36px;border-radius:0 0 16px 16px;border-top:1px solid rgba(255,255,255,0.04);">
     <p style="color:#334155;font-size:11px;text-align:center;margin:0;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
       Daily AI Digest &bull; Autonomous AI intelligence system &bull; {formatted_date}<br>
-      You are receiving this as a subscriber. To unsubscribe, contact your system administrator.
+      You are receiving this as a subscriber.
+      {f'<a href="{unsubscribe_url}" style="color:#64748b;text-decoration:underline;">Unsubscribe</a>' if unsubscribe_url else 'To unsubscribe, contact your system administrator.'}
     </p>
   </td></tr>
 
@@ -219,7 +220,7 @@ def build_html_email(digest_content, date_str):
 </html>"""
 
 
-def build_plain_text(digest_content, date_str):
+def build_plain_text(digest_content, date_str, unsubscribe_url=""):
     """Builds a plain-text fallback for email clients that don't render HTML."""
     c = digest_content
     sep = "-" * 48
@@ -262,6 +263,8 @@ def build_plain_text(digest_content, date_str):
         lines.append(f"• {w.get('item','')}: {w.get('details','')}")
 
     lines += ["", "—", f"View full digest: {_APP_URL}", ""]
+    if unsubscribe_url:
+        lines += [f"Unsubscribe: {unsubscribe_url}", ""]
     return "\n".join(lines)
 
 
@@ -276,9 +279,7 @@ def send_emails(smtp_settings, recipients, digest_content, date_str):
     if not recipients:
         return {"sent": 0, "failed": 0, "errors": ["No recipients provided."]}
 
-    html_body = build_html_email(digest_content, date_str)
-    text_body = build_plain_text(digest_content, date_str)
-    subject   = f"Daily AI Digest — {date_str}"
+    subject = f"Daily AI Digest — {date_str}"
 
     host      = smtp_settings.get("host", "")
     port      = int(smtp_settings.get("port", 587))
@@ -310,6 +311,9 @@ def send_emails(smtp_settings, recipients, digest_content, date_str):
                 if not to_email:
                     continue
                 try:
+                    unsubscribe_url = recipient.get("unsubscribe_url", "")
+                    html_body = build_html_email(digest_content, date_str, unsubscribe_url)
+                    text_body = build_plain_text(digest_content, date_str, unsubscribe_url)
                     msg = MIMEMultipart("alternative")
                     msg["Subject"] = subject
                     msg["From"]    = formataddr((from_name, from_addr))

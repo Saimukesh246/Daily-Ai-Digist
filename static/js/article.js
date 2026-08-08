@@ -170,6 +170,60 @@
         });
     }
 
+    /** Injects NewsArticle JSON-LD so search engines can render a rich result
+     *  (headline, dates, author/publisher) instead of a bare blue link. */
+    function injectJsonLd({ title, description, datePublished, imageUrl, pageUrl }) {
+        const data = {
+            "@context": "https://schema.org",
+            "@type": "NewsArticle",
+            "headline": title,
+            "description": description || undefined,
+            "datePublished": datePublished,
+            "url": pageUrl,
+            "mainEntityOfPage": { "@type": "WebPage", "@id": pageUrl },
+            "image": imageUrl ? [imageUrl] : undefined,
+            "publisher": {
+                "@type": "Organization",
+                "name": "AI Digest"
+            },
+            "author": { "@type": "Organization", "name": "AI Digest Editorial Desk" }
+        };
+        const script = document.createElement("script");
+        script.type = "application/ld+json";
+        script.textContent = JSON.stringify(data);
+        document.head.appendChild(script);
+    }
+
+    function wireShareButtons(title, pageUrl) {
+        const shareSection = document.getElementById("article-share");
+        if (!shareSection) return;
+        const encodedUrl = encodeURIComponent(pageUrl);
+        const encodedTitle = encodeURIComponent(title);
+
+        const xBtn = document.getElementById("share-x");
+        if (xBtn) xBtn.href = `https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedTitle}`;
+
+        const fbBtn = document.getElementById("share-facebook");
+        if (fbBtn) fbBtn.href = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
+
+        const liBtn = document.getElementById("share-linkedin");
+        if (liBtn) liBtn.href = `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`;
+
+        const copyBtn = document.getElementById("share-copy");
+        if (copyBtn) {
+            copyBtn.addEventListener("click", () => {
+                navigator.clipboard && navigator.clipboard.writeText(pageUrl).then(() => {
+                    const icon = copyBtn.querySelector("i");
+                    const original = icon.className;
+                    icon.className = "fa-solid fa-check";
+                    setTimeout(() => { icon.className = original; }, 1500);
+                }).catch(() => {});
+            });
+        }
+
+        shareSection.hidden = false;
+    }
+
     // ── Boot ──────────────────────────────────────────────────────────────────
     document.getElementById("footer-year").textContent = new Date().getFullYear();
 
@@ -209,6 +263,20 @@
                 if (item.link) {
                     document.getElementById("article-source-link").href = safeUrl(item.link);
                     document.getElementById("article-source").hidden = false;
+                }
+
+                const pageUrl = window.location.href;
+                wireShareButtons(title, pageUrl);
+                if (item.link) {
+                    fetch(`/api/public/og-image?url=${encodeURIComponent(item.link)}`)
+                        .then(res => res.ok ? res.json() : null)
+                        .then(og => injectJsonLd({
+                            title, description: dek, datePublished: data.date,
+                            imageUrl: og && og.image_url ? og.image_url : "", pageUrl
+                        }))
+                        .catch(() => injectJsonLd({ title, description: dek, datePublished: data.date, imageUrl: "", pageUrl }));
+                } else {
+                    injectJsonLd({ title, description: dek, datePublished: data.date, imageUrl: "", pageUrl });
                 }
 
                 renderRelated(data.related || []);

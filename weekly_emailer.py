@@ -16,7 +16,7 @@ _APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 logger   = logging.getLogger("emailer")
 
 
-def build_weekly_html_email(week_digests, week_label):
+def build_weekly_html_email(week_digests, week_label, unsubscribe_url=""):
     """
     Builds a Week-in-AI HTML email.
     week_digests: list of {"date": "YYYY-MM-DD", "content": {...}} (newest first)
@@ -150,7 +150,7 @@ def build_weekly_html_email(week_digests, week_label):
      style="display:inline-block;background:linear-gradient(135deg,#b55fe6,#00f0ff);
             color:#060913;font-size:14px;font-weight:700;text-decoration:none;
             padding:14px 32px;border-radius:100px;">
-    Open Full Dashboard &rarr;
+    Read This Week's Digest &rarr;
   </a>
 </td></tr>
 
@@ -158,6 +158,7 @@ def build_weekly_html_email(week_digests, week_label):
                border-radius:0 0 16px 16px;text-align:center;">
   <p style="color:#334155;font-size:11px;margin:0;">
     Daily AI Digest &nbsp;&middot;&nbsp; Weekly Edition &nbsp;&middot;&nbsp; {week_label}
+    {f'&nbsp;&middot;&nbsp; <a href="{unsubscribe_url}" style="color:#334155;text-decoration:underline;">Unsubscribe</a>' if unsubscribe_url else ''}
   </p>
 </td></tr>
 
@@ -165,7 +166,7 @@ def build_weekly_html_email(week_digests, week_label):
 </body></html>"""
 
 
-def build_weekly_plain_text(week_digests, week_label):
+def build_weekly_plain_text(week_digests, week_label, unsubscribe_url=""):
     lines = [f"WEEK IN AI -- {week_label}", "=" * 50, ""]
     for day in week_digests:
         c = day.get("content", {})
@@ -174,14 +175,14 @@ def build_weekly_plain_text(week_digests, week_label):
             lines.append(f"  * {item.get('headline', '')}")
             lines.append(f"    {item.get('link', '')}")
         lines.append("")
-    lines += ["", f"Full dashboard: {_APP_URL}"]
+    lines += ["", f"Read online: {_APP_URL}"]
+    if unsubscribe_url:
+        lines += [f"Unsubscribe: {unsubscribe_url}", ""]
     return "\n".join(lines)
 
 
 def send_weekly_emails(smtp_settings, recipients, week_digests, week_label):
     """Sends the weekly digest to all recipients. Returns {sent, failed, errors}."""
-    html      = build_weekly_html_email(week_digests, week_label)
-    plain     = build_weekly_plain_text(week_digests, week_label)
     from_name = smtp_settings.get("from_name", "Daily AI Digest")
     from_addr = formataddr((from_name, smtp_settings["user"]))
     subject   = f"Week in AI — {week_label}"
@@ -201,6 +202,9 @@ def send_weekly_emails(smtp_settings, recipients, week_digests, week_label):
 
         for recip in recipients:
             try:
+                unsubscribe_url = recip.get("unsubscribe_url", "")
+                html            = build_weekly_html_email(week_digests, week_label, unsubscribe_url)
+                plain           = build_weekly_plain_text(week_digests, week_label, unsubscribe_url)
                 msg            = MIMEMultipart("alternative")
                 msg["Subject"] = subject
                 msg["From"]    = from_addr

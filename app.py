@@ -14,6 +14,7 @@ logger = logging.getLogger("app")
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Response, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 
 import requests as _requests
@@ -62,6 +63,20 @@ os.makedirs(os.path.join(STATIC_DIR, "js"), exist_ok=True)
 # Mount the static files directory
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Serves a styled 404 page for unmatched browser routes, while leaving
+    every other HTTPException (including 404s raised by API endpoints, e.g.
+    'digest not found') as plain JSON, matching FastAPI's default shape."""
+    if exc.status_code == 404 and not request.url.path.startswith("/api"):
+        not_found_path = os.path.join(STATIC_DIR, "404.html")
+        if os.path.exists(not_found_path):
+            with open(not_found_path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read(), status_code=404)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
 # Database initialization
 DB_PATH = database.DEFAULT_DB_PATH
 database.init_db(DB_PATH)
@@ -88,6 +103,16 @@ CRON_SECRET = os.environ.get("CRON_SECRET", "")
 # Where to send ops alerts (sync failures, all-sources-down) — unset by
 # default, in which case alerts are just skipped (see send_alert_email).
 ADMIN_ALERT_EMAIL = os.environ.get("ADMIN_ALERT_EMAIL", "")
+
+# Signs one-click unsubscribe links (see _unsubscribe_token) so a link can only
+# unsubscribe the email address it was generated for. Falls back to CRON_SECRET,
+# then to a random value generated at process start — the latter just means
+# unsubscribe links minted before a redeploy stop validating after one, which
+# is a minor inconvenience, not a security issue, for a low-stakes mailing list.
+UNSUBSCRIBE_SECRET = os.environ.get("UNSUBSCRIBE_SECRET") or CRON_SECRET
+if not UNSUBSCRIBE_SECRET:
+    import secrets as _secrets_mod
+    UNSUBSCRIBE_SECRET = _secrets_mod.token_urlsafe(32)
 
 
 def send_ops_alert(subject: str, body: str):
@@ -667,6 +692,94 @@ async def get_public_articles_stream(request: Request, limit: int = 15, offset: 
     }
 
 
+@app.get("/api/public/search")
+@limiter.limit("30/minute")
+async def public_search(request: Request, q: str = "", source: str = "", limit: int = 40):
+    """Full-text search across all indexed raw articles, for the blog's search modal."""
+    limit = min(max(1, limit), 100)
+    results = database.search_articles(DB_PATH, q.strip(), source.strip() or None, limit)
+    sources = database.get_distinct_sources(DB_PATH)
+    return {"results": results, "sources": sources, "total": len(results)}
+
+
+def _unsubscribe_token(email: str) -> str:
+    import hmac, hashlib
+    return hmac.new(UNSUBSCRIBE_SECRET.encode(), email.strip().lower().encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def _unsubscribe_url(email: str) -> str:
+    import urllib.parse as _up
+    base = os.environ.get("APP_URL", "").rstrip("/") or "http://localhost:8000"
+    return f"{base}/api/public/unsubscribe?email={_up.quote(email)}&token={_unsubscribe_token(email)}"
+
+
+@app.get("/api/public/unsubscribe", response_class=HTMLResponse)
+@limiter.limit("20/minute")
+async def public_unsubscribe(request: Request, email: str, token: str):
+    """Landing page a subscriber hits from the unsubscribe link in an email —
+    CAN-SPAM requires a working one-click unsubscribe. The token is an HMAC of
+    the email so this can't be used to unsubscribe someone else's address."""
+    valid = token and _unsubscribe_token(email) == token
+    if valid:
+        database.deactivate_subscriber(DB_PATH, email)
+        message = f"{_esc_attr(email)} has been unsubscribed from AI Digest emails."
+    else:
+        message = "That unsubscribe link is invalid or has expired."
+    return f"""
+    <html>
+        <head><title>Unsubscribe — AI Digest</title>
+        <style>body {{background:#0a0a0a; color:#f2f2f2; font-family:sans-serif; text-align:center; padding:100px 20px;}}
+        a {{color:#f2f2f2;}}</style></head>
+        <body><h1>AI Digest</h1><p>{message}</p><p><a href="/">Return to AI Digest</a></p></body>
+    </html>
+    """
+
+
+class ReadingListPayload(BaseModel):
+    bookmarks: list
+
+
+@app.get("/api/public/reading-list/{code}")
+@limiter.limit("30/minute")
+async def get_reading_list(request: Request, code: str):
+    if not code or len(code) > 64:
+        raise HTTPException(status_code=400, detail="Invalid sync code.")
+    return {"bookmarks": database.get_synced_bookmarks(DB_PATH, code)}
+
+
+@app.put("/api/public/reading-list/{code}")
+@limiter.limit("30/minute")
+async def put_reading_list(request: Request, code: str, payload: ReadingListPayload):
+    if not code or len(code) > 64:
+        raise HTTPException(status_code=400, detail="Invalid sync code.")
+    database.replace_synced_bookmarks(DB_PATH, code, payload.bookmarks)
+    return {"message": "Reading list synced.", "count": len(payload.bookmarks)}
+
+
+@app.get("/sitemap.xml")
+async def serve_sitemap(request: Request):
+    """Basic sitemap: homepage, RSS feed, and an article URL per item in the
+    latest digest's linkable sections."""
+    from xml.sax.saxutils import escape as _xml_escape
+    site_url = os.environ.get("APP_URL") or str(request.base_url).rstrip("/")
+
+    urls = [(site_url + "/", "daily")]
+    digest = database.get_latest_digest(DB_PATH)
+    if digest:
+        content = digest.get("content", {})
+        for section in _ARTICLE_SECTIONS:
+            items = content.get(section) or []
+            for i in range(len(items)):
+                urls.append((f"{site_url}/article.html?date={digest['date']}&section={section}&index={i}", "weekly"))
+
+    entries = "".join(
+        f"\n  <url><loc>{_xml_escape(loc)}</loc><changefreq>{freq}</changefreq></url>"
+        for loc, freq in urls
+    )
+    xml = f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}\n</urlset>'
+    return Response(content=xml, media_type="application/xml")
+
+
 @app.api_route("/api/cron/hourly", methods=["GET", "POST"])
 async def trigger_hourly_cron(request: Request, background_tasks: BackgroundTasks):
     """Externally-triggered equivalent of the in-process hourly scheduler, for
@@ -760,6 +873,8 @@ def send_weekly_digest():
 
         week_label = f"{start_dt.strftime('%b %d')} – {end_dt.strftime('%b %d, %Y')}"
         logger.info(f"Weekly email: sending to {len(subscribers)} subscriber(s) for {week_label}...")
+        for sub in subscribers:
+            sub["unsubscribe_url"] = _unsubscribe_url(sub["email"])
         result = weekly_emailer.send_weekly_emails(smtp_settings, subscribers, digests, week_label)
         database.save_setting(DB_PATH, "last_weekly_email_sent", end_str)
         logger.info(f"Weekly email: sent={result['sent']}, failed={result['failed']}.")
@@ -793,6 +908,8 @@ def send_scheduled_emails(date_str):
             logger.warning(f"Email scheduler: No digest for {date_str}.")
             return
         logger.info(f"Email scheduler: Dispatching to {len(subscribers)} subscriber(s)...")
+        for sub in subscribers:
+            sub["unsubscribe_url"] = _unsubscribe_url(sub["email"])
         result = emailer.send_emails(smtp_settings, subscribers, digest_row["content"], date_str)
         database.save_setting(DB_PATH, "last_email_sent_date", date_str)
         add_log(f"Email delivery complete — sent: {result['sent']}, failed: {result['failed']}.")

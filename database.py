@@ -93,6 +93,18 @@ def init_db(db_path=None):
         """)
 
         cursor.execute("""
+        CREATE TABLE IF NOT EXISTS synced_bookmarks (
+            sync_code TEXT NOT NULL,
+            url TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT '',
+            date TEXT NOT NULL DEFAULT '',
+            saved_at TEXT NOT NULL,
+            PRIMARY KEY (sync_code, url)
+        )
+        """)
+
+        cursor.execute("""
         CREATE TABLE IF NOT EXISTS sources (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
@@ -464,6 +476,23 @@ def remove_subscriber(db_path, email):
         release_db_connection(conn)
 
 
+def deactivate_subscriber(db_path, email):
+    """Marks a subscriber inactive (unsubscribe) without deleting their row.
+    Returns True if a matching active subscriber was found."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE subscribers SET active = 0 WHERE email = %s",
+            (email.strip().lower(),),
+        )
+        updated = cursor.rowcount > 0
+        conn.commit()
+        return updated
+    finally:
+        release_db_connection(conn)
+
+
 def get_all_subscribers(db_path):
     """Returns all subscribers (active and inactive) as a list of dicts."""
     conn = get_db_connection()
@@ -568,6 +597,50 @@ def save_og_image_cache(db_path, url, image_url, title):
             title = EXCLUDED.title,
             fetched_at = EXCLUDED.fetched_at
         """, (url, image_url or "", title or "", fetched_at))
+        conn.commit()
+    finally:
+        release_db_connection(conn)
+
+
+# --- Reading list sync (cross-device, no login — keyed by an opaque sync code) ---
+
+MAX_SYNCED_BOOKMARKS = 500  # generous cap; a reading list this size means something's wrong client-side
+
+
+def get_synced_bookmarks(db_path, sync_code):
+    """Returns all bookmarks stored under a sync code, newest first."""
+    conn = get_db_connection()
+    try:
+        cursor = _dict_cursor(conn)
+        cursor.execute("""
+            SELECT url, title, source, date, saved_at FROM synced_bookmarks
+            WHERE sync_code = %s ORDER BY saved_at DESC
+        """, (sync_code,))
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        release_db_connection(conn)
+
+
+def replace_synced_bookmarks(db_path, sync_code, items):
+    """Overwrites the entire reading list stored under a sync code with `items`
+    (a full push from the client, not an incremental diff — simplest thing that
+    avoids merge-conflict logic across devices)."""
+    items = items[:MAX_SYNCED_BOOKMARKS]
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM synced_bookmarks WHERE sync_code = %s", (sync_code,))
+        if items:
+            rows = [
+                (sync_code, it["url"], it.get("title", ""), it.get("source", ""),
+                 it.get("date", ""), it.get("savedAt") or datetime.utcnow().isoformat())
+                for it in items if it.get("url")
+            ]
+            psycopg2.extras.execute_values(
+                cursor,
+                "INSERT INTO synced_bookmarks (sync_code, url, title, source, date, saved_at) VALUES %s",
+                rows,
+            )
         conn.commit()
     finally:
         release_db_connection(conn)

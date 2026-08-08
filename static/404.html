@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page Not Found — AI Digest</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root[data-theme="light"] { --bg: #ffffff; --fg: #111111; --muted: #666666; --border: #ececec; }
+        :root[data-theme="dark"]  { --bg: #0a0a0a; --fg: #f2f2f2; --muted: #a3a3a3; --border: #262626; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--fg);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px;
+        }
+        .wrap { max-width: 480px; }
+        h1 {
+            font-family: 'Playfair Display', serif;
+            font-weight: 900;
+            font-size: 96px;
+            line-height: 1;
+            margin: 0 0 8px;
+            letter-spacing: -2px;
+        }
+        h2 {
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            font-size: 22px;
+            margin: 0 0 12px;
+        }
+        p { color: var(--muted); font-size: 14.5px; line-height: 1.6; margin: 0 0 28px; }
+        a.home-link {
+            display: inline-block;
+            padding: 11px 26px;
+            border: 1px solid var(--border);
+            color: var(--fg);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all .2s;
+        }
+        a.home-link:hover { border-color: var(--fg); }
+    </style>
+    <script>
+    (function () {
+        var saved = localStorage.getItem("aidigest_blog_theme");
+        var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+    })();
+    </script>
+</head>
+<body>
+    <div class="wrap">
+        <h1>404</h1>
+        <h2>This page doesn't exist</h2>
+        <p>The story, tool, or page you're looking for may have moved or never existed. Head back to the daily briefing.</p>
+        <a class="home-link" href="/">&larr; Back to AI Digest</a>
+    </div>
+</body>
+</html>
