@@ -23,6 +23,9 @@ Usage examples:
     python ops.py apikey set AIzaSy...
     python ops.py smtp show
     python ops.py smtp set smtp.gmail.com 587 you@gmail.com app-password
+    python ops.py email status
+    python ops.py email enable
+    python ops.py email enable --weekly
     python ops.py subscribers list
     python ops.py subscribers add jane@example.com "Jane Doe"
     python ops.py subscribers remove jane@example.com
@@ -172,6 +175,38 @@ def cmd_smtp_set(args):
     print(f"SMTP settings saved ({args.host}:{args.port}, user={args.user}).")
 
 
+def cmd_email_status(args):
+    daily_enabled  = database.get_setting(None, "email_enabled", "false").lower() == "true"
+    weekly_enabled = database.get_setting(None, "weekly_email_enabled", "false").lower() == "true"
+    last_daily  = database.get_setting(None, "last_email_sent_date", "")
+    last_weekly = database.get_setting(None, "last_weekly_email_sent", "")
+    print(f"Daily digest email:      {'enabled' if daily_enabled else 'disabled'}  (last sent: {last_daily or 'never'})")
+    print(f"Weekly roundup email:    {'enabled' if weekly_enabled else 'disabled'}  (last sent: {last_weekly or 'never'})")
+    if (daily_enabled or weekly_enabled):
+        host = database.get_setting(None, "smtp_host", "")
+        user = database.get_setting(None, "smtp_user", "")
+        if not host or not user:
+            print("\nWarning: an email is enabled but SMTP isn't configured (see: python ops.py smtp show).")
+
+
+def cmd_email_enable(args):
+    key = "weekly_email_enabled" if args.weekly else "email_enabled"
+    label = "Weekly roundup" if args.weekly else "Daily digest"
+    database.save_setting(None, key, "true")
+    print(f"{label} email enabled.")
+    host = database.get_setting(None, "smtp_host", "")
+    user = database.get_setting(None, "smtp_user", "")
+    if not host or not user:
+        print("Warning: SMTP isn't configured yet, so nothing will actually send (see: python ops.py smtp set).")
+
+
+def cmd_email_disable(args):
+    key = "weekly_email_enabled" if args.weekly else "email_enabled"
+    label = "Weekly roundup" if args.weekly else "Daily digest"
+    database.save_setting(None, key, "false")
+    print(f"{label} email disabled.")
+
+
 def cmd_subscribers_list(args):
     subs = database.get_all_subscribers(None)
     if not subs:
@@ -239,6 +274,15 @@ def main():
     p.add_argument("password")
     p.add_argument("--from-name", default="Daily AI Digest", dest="from_name")
     p.set_defaults(func=cmd_smtp_set)
+
+    email = sub.add_parser("email", help="View or toggle daily/weekly subscriber emails.").add_subparsers(dest="email_command", required=True)
+    email.add_parser("status", help="Show whether daily/weekly emails are enabled.").set_defaults(func=cmd_email_status)
+    p = email.add_parser("enable", help="Enable the daily digest email (or --weekly for the weekly roundup).")
+    p.add_argument("--weekly", action="store_true", help="Target the weekly roundup instead of the daily digest.")
+    p.set_defaults(func=cmd_email_enable)
+    p = email.add_parser("disable", help="Disable the daily digest email (or --weekly for the weekly roundup).")
+    p.add_argument("--weekly", action="store_true", help="Target the weekly roundup instead of the daily digest.")
+    p.set_defaults(func=cmd_email_disable)
 
     subscribers = sub.add_parser("subscribers", help="Manage newsletter subscribers.").add_subparsers(dest="subscribers_command", required=True)
     subscribers.add_parser("list", help="List all subscribers.").set_defaults(func=cmd_subscribers_list)
