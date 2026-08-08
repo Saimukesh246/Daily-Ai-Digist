@@ -270,19 +270,6 @@ def save_raw_articles_bulk(db_path, date, items):
         release_db_connection(conn)
 
 
-def get_raw_articles_by_date(db_path, date):
-    """Retrieves all raw articles for a specific date, newest first."""
-    conn = get_db_connection()
-    try:
-        cursor = _dict_cursor(conn)
-        cursor.execute("""
-        SELECT * FROM raw_articles WHERE date = %s ORDER BY fetched_at DESC, id DESC
-        """, (date,))
-        return [dict(row) for row in cursor.fetchall()]
-    finally:
-        release_db_connection(conn)
-
-
 def clear_articles_for_date(db_path, date):
     """Deletes all raw articles for a date so the next sync fetches fully fresh content."""
     conn = get_db_connection()
