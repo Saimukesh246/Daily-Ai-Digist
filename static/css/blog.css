@@ -1236,3 +1236,62 @@ button { font-family: inherit; }
     border-color: var(--fg);
     color: var(--fg);
 }
+
+/* ── Settings drawer ─────────────────────────────────────────── */
+.settings-group {
+    margin-bottom: 28px;
+}
+
+.settings-group:last-child {
+    margin-bottom: 0;
+}
+
+.settings-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+
+.segmented-control {
+    display: flex;
+    border: 1px solid var(--border);
+}
+
+.segmented-btn {
+    flex: 1;
+    padding: 9px 0;
+    background: none;
+    border: none;
+    border-left: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'Inter', sans-serif;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s, color .2s;
+}
+
+.segmented-btn:first-child {
+    border-left: none;
+}
+
+.segmented-btn:hover {
+    color: var(--fg);
+}
+
+.segmented-btn.active {
+    background: var(--fg);
+    color: var(--bg);
+}
+
+.segmented-btn-sm { font-size: 11px; }
+.segmented-btn-md { font-size: 14px; }
+.segmented-btn-lg { font-size: 17px; }
+
+/* ── Reader text-size preference (Settings > Text Size) ──────── */
+:root[data-font-size="sm"] .article-body { font-size: 15px; }
+:root[data-font-size="md"] .article-body { font-size: 17px; }
+:root[data-font-size="lg"] .article-body { font-size: 19.5px; }

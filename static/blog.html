@@ -22,14 +22,15 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/blog.css?v=5">
+    <link rel="stylesheet" href="/static/css/blog.css?v=6">
 
-    <!-- Applied before first paint so the correct theme renders immediately (no flash). -->
+    <!-- Applied before first paint so the correct theme/text-size render immediately (no flash). -->
     <script>
     (function () {
         var saved = localStorage.getItem("aidigest_blog_theme");
         var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
         document.documentElement.setAttribute("data-theme", theme);
+        document.documentElement.setAttribute("data-font-size", localStorage.getItem("aidigest_blog_font_size") || "md");
     })();
     </script>
 </head>
@@ -56,6 +57,9 @@
                 </button>
                 <button class="icon-btn theme-toggle" id="theme-toggle" aria-label="Toggle dark mode" title="Toggle theme">
                     <i class="fa-solid fa-moon" id="theme-icon"></i>
+                </button>
+                <button class="icon-btn" id="settings-toggle-btn" aria-label="Settings" title="Settings">
+                    <i class="fa-solid fa-gear"></i>
                 </button>
             </div>
         </div>
@@ -207,6 +211,36 @@
         </div>
     </aside>
 
-    <script src="/static/js/blog.js?v=5"></script>
+    <!-- Settings Slide-out Drawer -->
+    <div class="saved-drawer-backdrop" id="settings-drawer-backdrop" hidden></div>
+    <aside class="saved-drawer" id="settings-drawer" hidden>
+        <div class="saved-drawer-head">
+            <h3><i class="fa-solid fa-gear"></i> Settings</h3>
+            <button class="drawer-close-btn" id="settings-close-btn" aria-label="Close settings">&times;</button>
+        </div>
+        <div class="saved-drawer-body">
+            <div class="settings-group">
+                <div class="settings-label">Appearance</div>
+                <div class="segmented-control" id="settings-theme-control">
+                    <button class="segmented-btn" data-theme-choice="light">Light</button>
+                    <button class="segmented-btn" data-theme-choice="dark">Dark</button>
+                </div>
+            </div>
+            <div class="settings-group">
+                <div class="settings-label">Text Size</div>
+                <div class="segmented-control" id="settings-fontsize-control">
+                    <button class="segmented-btn segmented-btn-sm" data-fontsize-choice="sm">A</button>
+                    <button class="segmented-btn segmented-btn-md" data-fontsize-choice="md">A</button>
+                    <button class="segmented-btn segmented-btn-lg" data-fontsize-choice="lg">A</button>
+                </div>
+            </div>
+            <div class="settings-group">
+                <div class="settings-label">Reading List</div>
+                <button class="clear-saved-btn" id="settings-clear-saved-btn">Clear All Saved</button>
+            </div>
+        </div>
+    </aside>
+
+    <script src="/static/js/blog.js?v=6"></script>
 </body>
 </html>

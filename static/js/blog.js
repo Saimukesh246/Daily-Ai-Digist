@@ -160,21 +160,79 @@
     }
 
     // ── Theme toggle ──────────────────────────────────────────────────────────
+    function setTheme(theme) {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem(THEME_KEY, theme);
+        const icon = document.getElementById("theme-icon");
+        if (icon) icon.className = theme === "dark" ? "fa-solid fa-sun" : "fa-solid fa-moon";
+        document.querySelectorAll("#settings-theme-control .segmented-btn").forEach(btn => {
+            btn.classList.toggle("active", btn.dataset.themeChoice === theme);
+        });
+    }
+
     (function initTheme() {
         const btn = document.getElementById("theme-toggle");
-        const icon = document.getElementById("theme-icon");
-        function applyIcon() {
-            const theme = document.documentElement.getAttribute("data-theme");
-            icon.className = theme === "dark" ? "fa-solid fa-sun" : "fa-solid fa-moon";
-        }
-        applyIcon();
+        setTheme(document.documentElement.getAttribute("data-theme") || "light");
         btn.addEventListener("click", () => {
             const current = document.documentElement.getAttribute("data-theme");
-            const next = current === "dark" ? "light" : "dark";
-            document.documentElement.setAttribute("data-theme", next);
-            localStorage.setItem(THEME_KEY, next);
-            applyIcon();
+            setTheme(current === "dark" ? "light" : "dark");
         });
+    })();
+
+    // ── Text-size preference ────────────────────────────────────────────────
+    const FONT_SIZE_KEY = "aidigest_blog_font_size";
+
+    function setFontSize(size) {
+        document.documentElement.setAttribute("data-font-size", size);
+        localStorage.setItem(FONT_SIZE_KEY, size);
+        document.querySelectorAll("#settings-fontsize-control .segmented-btn").forEach(btn => {
+            btn.classList.toggle("active", btn.dataset.fontsizeChoice === size);
+        });
+    }
+
+    (function initFontSize() {
+        setFontSize(document.documentElement.getAttribute("data-font-size") || "md");
+    })();
+
+    // ── Settings drawer ─────────────────────────────────────────────────────
+    (function initSettingsDrawer() {
+        const toggleBtn = document.getElementById("settings-toggle-btn");
+        const backdrop = document.getElementById("settings-drawer-backdrop");
+        const drawer = document.getElementById("settings-drawer");
+        const closeBtn = document.getElementById("settings-close-btn");
+        const clearBtn = document.getElementById("settings-clear-saved-btn");
+
+        if (!toggleBtn || !drawer) return;
+
+        function openDrawer() {
+            drawer.removeAttribute("hidden");
+            if (backdrop) backdrop.removeAttribute("hidden");
+        }
+
+        function closeDrawer() {
+            drawer.setAttribute("hidden", "");
+            if (backdrop) backdrop.setAttribute("hidden", "");
+        }
+
+        toggleBtn.addEventListener("click", openDrawer);
+        if (closeBtn) closeBtn.addEventListener("click", closeDrawer);
+        if (backdrop) backdrop.addEventListener("click", closeDrawer);
+
+        document.querySelectorAll("#settings-theme-control .segmented-btn").forEach(btn => {
+            btn.addEventListener("click", () => setTheme(btn.dataset.themeChoice));
+        });
+        document.querySelectorAll("#settings-fontsize-control .segmented-btn").forEach(btn => {
+            btn.addEventListener("click", () => setFontSize(btn.dataset.fontsizeChoice));
+        });
+
+        if (clearBtn) {
+            clearBtn.addEventListener("click", () => {
+                if (confirm("Remove all saved articles from your reading list?")) {
+                    localStorage.setItem(BOOKMARKS_KEY, JSON.stringify([]));
+                    updateBookmarkUI();
+                }
+            });
+        }
     })();
 
     // ── Mobile nav ────────────────────────────────────────────────────────────
