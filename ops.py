@@ -21,6 +21,8 @@ Usage examples:
     python ops.py sources remove 5
     python ops.py apikey show
     python ops.py apikey set AIzaSy...
+    python ops.py smtp show
+    python ops.py smtp set smtp.gmail.com 587 you@gmail.com app-password
     python ops.py subscribers list
     python ops.py subscribers add jane@example.com "Jane Doe"
     python ops.py subscribers remove jane@example.com
@@ -137,6 +139,39 @@ def cmd_apikey_set(args):
     print("Gemini API key saved.")
 
 
+def cmd_smtp_show(args):
+    host      = database.get_setting(None, "smtp_host", "")
+    port      = database.get_setting(None, "smtp_port", "587")
+    user      = database.get_setting(None, "smtp_user", "")
+    password  = database.get_setting(None, "smtp_password", "")
+    from_name = database.get_setting(None, "smtp_from_name", "Daily AI Digest")
+    enabled   = database.get_setting(None, "email_enabled", "false").lower() == "true"
+    admin_alert_email = os.environ.get("ADMIN_ALERT_EMAIL", "")
+
+    if not host or not user:
+        print("SMTP is not configured - no digest emails, subscribe confirmations, or ops alerts can be sent.")
+        print("Set it with: python ops.py smtp set <host> <port> <user> <password> [--from-name NAME]")
+        return
+
+    print(f"SMTP host:              {host}:{port}")
+    print(f"SMTP user:               {user}")
+    print(f"SMTP password:           {'(set)' if password else '(not set)'}")
+    print(f"From name:               {from_name}")
+    print(f"Daily digest email:      {'enabled' if enabled else 'disabled'}")
+    print(f"ADMIN_ALERT_EMAIL:       {admin_alert_email or '(not set in environment)'}")
+    if not admin_alert_email:
+        print("\nSMTP is configured, but ADMIN_ALERT_EMAIL isn't set, so sync-failure alerts won't be sent.")
+
+
+def cmd_smtp_set(args):
+    database.save_setting(None, "smtp_host", args.host.strip())
+    database.save_setting(None, "smtp_port", str(args.port))
+    database.save_setting(None, "smtp_user", args.user.strip())
+    database.save_setting(None, "smtp_password", args.password.strip())
+    database.save_setting(None, "smtp_from_name", args.from_name)
+    print(f"SMTP settings saved ({args.host}:{args.port}, user={args.user}).")
+
+
 def cmd_subscribers_list(args):
     subs = database.get_all_subscribers(None)
     if not subs:
@@ -194,6 +229,16 @@ def main():
     p = apikey.add_parser("set", help="Set the Gemini API key.")
     p.add_argument("key")
     p.set_defaults(func=cmd_apikey_set)
+
+    smtp = sub.add_parser("smtp", help="View or set SMTP settings (digest emails, ops alerts).").add_subparsers(dest="smtp_command", required=True)
+    smtp.add_parser("show", help="Show current SMTP configuration (password masked).").set_defaults(func=cmd_smtp_show)
+    p = smtp.add_parser("set", help="Set SMTP settings.")
+    p.add_argument("host")
+    p.add_argument("port", type=int)
+    p.add_argument("user")
+    p.add_argument("password")
+    p.add_argument("--from-name", default="Daily AI Digest", dest="from_name")
+    p.set_defaults(func=cmd_smtp_set)
 
     subscribers = sub.add_parser("subscribers", help="Manage newsletter subscribers.").add_subparsers(dest="subscribers_command", required=True)
     subscribers.add_parser("list", help="List all subscribers.").set_defaults(func=cmd_subscribers_list)
