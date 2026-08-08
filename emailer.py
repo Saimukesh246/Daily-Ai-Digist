@@ -626,3 +626,53 @@ Daily AI Digest | Automated Notification
         logger.error(f"Failed to send subscribe confirmation to {to_email}: {exc}")
         return False
 
+
+def send_alert_email(smtp_settings, to_email, subject, body):
+    """
+    Sends a plain-text ops alert (sync failure, degraded sources, etc.) to the
+    admin. Deliberately minimal — no HTML template — since this is an internal
+    signal, not reader-facing content.
+
+    Returns: True on success, False on failure (including when SMTP or
+    to_email isn't configured, which is expected when alerting isn't set up).
+    """
+    if not smtp_settings.get("host") or not smtp_settings.get("user") or not to_email:
+        logger.warning("Alert email skipped — SMTP or alert recipient not configured.")
+        return False
+
+    host      = smtp_settings.get("host", "")
+    port      = int(smtp_settings.get("port", 587))
+    user      = smtp_settings.get("user", "")
+    password  = smtp_settings.get("password", "")
+    from_name = smtp_settings.get("from_name", "Daily AI Digest")
+    from_addr = user
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"[AI Digest Alert] {subject}"
+        msg["From"]    = formataddr((from_name, from_addr))
+        msg["To"]      = to_email
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+
+        if port == 465:
+            ctx    = ssl.create_default_context()
+            server = smtplib.SMTP_SSL(host, port, context=ctx, timeout=20)
+        else:
+            server = smtplib.SMTP(host, port, timeout=20)
+            server.ehlo()
+            if port == 587:
+                server.starttls(context=ssl.create_default_context())
+                server.ehlo()
+
+        if user and password:
+            server.login(user, password)
+
+        server.sendmail(from_addr, [to_email], msg.as_string())
+        server.quit()
+        logger.info(f"Alert email sent to {to_email}: {subject}")
+        return True
+
+    except Exception as exc:
+        logger.error(f"Failed to send alert email to {to_email}: {exc}")
+        return False
+

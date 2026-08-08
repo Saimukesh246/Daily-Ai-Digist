@@ -130,6 +130,15 @@ def init_db(db_path=None):
         """)
 
         cursor.execute("""
+        CREATE TABLE IF NOT EXISTS og_image_cache (
+            url TEXT PRIMARY KEY,
+            image_url TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            fetched_at TEXT NOT NULL
+        )
+        """)
+
+        cursor.execute("""
         CREATE TABLE IF NOT EXISTS bookmarks (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL,
@@ -521,6 +530,47 @@ def get_scraper_config(db_path):
 def save_scraper_config(db_path, config):
     """Saves the scraper configuration dict to the settings table as JSON."""
     save_setting(db_path, "scraper_config", json.dumps(config))
+
+
+# --- OG image cache (persisted so scraping traffic doesn't spike on every deploy) ---
+
+def get_cached_og_image(db_path, url, max_age_days=7):
+    """Returns {"image_url", "title"} if a fresh cache entry exists, else None."""
+    conn = get_db_connection()
+    try:
+        cursor = _dict_cursor(conn)
+        cursor.execute("SELECT image_url, title, fetched_at FROM og_image_cache WHERE url = %s", (url,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        try:
+            fetched_at = datetime.fromisoformat(row["fetched_at"])
+            if datetime.utcnow() - fetched_at > timedelta(days=max_age_days):
+                return None
+        except Exception:
+            return None
+        return {"image_url": row["image_url"], "title": row["title"]}
+    finally:
+        release_db_connection(conn)
+
+
+def save_og_image_cache(db_path, url, image_url, title):
+    """Upserts an OG image/title lookup result, keyed by source URL."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        fetched_at = datetime.utcnow().isoformat()
+        cursor.execute("""
+        INSERT INTO og_image_cache (url, image_url, title, fetched_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (url) DO UPDATE SET
+            image_url = EXCLUDED.image_url,
+            title = EXCLUDED.title,
+            fetched_at = EXCLUDED.fetched_at
+        """, (url, image_url or "", title or "", fetched_at))
+        conn.commit()
+    finally:
+        release_db_connection(conn)
 
 
 # --- Dynamic Sources Management ---

@@ -78,10 +78,28 @@ SYNC_STATUS = {
     "completed_at": None
 }
 
-# Shared secret for the external cron trigger (/api/cron/hourly) — lets a free
-# external pinger (cron-job.org etc.) drive the hourly job on hosts like Render's
-# free tier, where the process sleeps and the in-process scheduler thread dies with it.
+# Shared secret for the external cron trigger (/api/cron/hourly) and the ops
+# endpoints (/api/ops/*) — lets a free external pinger (cron-job.org etc.)
+# drive the hourly job on hosts like Render's free tier, where the process
+# sleeps and the in-process scheduler thread dies with it, and lets the local
+# ops.py CLI trigger a sync / read status on a deployed instance.
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
+
+# Where to send ops alerts (sync failures, all-sources-down) — unset by
+# default, in which case alerts are just skipped (see send_alert_email).
+ADMIN_ALERT_EMAIL = os.environ.get("ADMIN_ALERT_EMAIL", "")
+
+
+def send_ops_alert(subject: str, body: str):
+    if not ADMIN_ALERT_EMAIL:
+        logger.warning(f"Ops alert suppressed (ADMIN_ALERT_EMAIL not set): {subject}")
+        return
+    smtp = get_smtp_settings()
+    threading.Thread(
+        target=emailer.send_alert_email,
+        args=(smtp, ADMIN_ALERT_EMAIL, subject, body),
+        daemon=True
+    ).start()
 
 def assert_public_http_url(url: str):
     """Raises ValueError if the URL isn't http(s) or resolves to a private/internal/
@@ -209,6 +227,7 @@ def run_sync_job(date_str):
 
         add_log(f"Crawling {len(jobs)} sources in parallel...")
         all_items = []
+        failed_sources = []
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=max(len(jobs), 1)) as executor:
             future_to_name = {executor.submit(fn): name for name, fn in jobs.items()}
@@ -219,8 +238,25 @@ def run_sync_job(date_str):
                 except Exception as e:
                     logger.error(f"Error fetching {name}: {e}")
                     items = []
+                if not items:
+                    failed_sources.append(name)
                 add_log(f"-> {name}: Found {len(items)} items.")
                 all_items.extend(items)
+
+        # If every enabled source came back empty, that's almost certainly a
+        # systemic problem (network egress blocked, all feeds down at once,
+        # etc.) rather than coincidence — worth a heads-up rather than
+        # silently publishing a digest built from zero fresh articles.
+        if jobs and len(failed_sources) == len(jobs):
+            send_ops_alert(
+                f"All {len(jobs)} sources returned zero items ({date_str})",
+                f"Every enabled source failed to return any items during today's sync:\n"
+                f"{', '.join(failed_sources)}\n\n"
+                f"This usually means a shared cause (network/DNS egress blocked, "
+                f"all feeds simultaneously down, or a code change broke fetcher.py). "
+                f"Today's digest will be built from whatever raw articles already "
+                f"exist in the database, if any."
+            )
 
         unique_items = []
         seen_urls    = set()
@@ -275,6 +311,11 @@ def run_sync_job(date_str):
         SYNC_STATUS["status"]        = "error"
         SYNC_STATUS["error_message"] = str(e)
         add_log(f"CRITICAL ERROR: {e}")
+        send_ops_alert(
+            f"Sync job crashed ({date_str})",
+            f"The synchronization job for {date_str} raised an unhandled exception:\n\n{e}\n\n"
+            f"Recent log lines:\n" + "\n".join(SYNC_STATUS["logs"][-15:])
+        )
 
 # ---------------------------------------------------------------------------
 # WEB ENDPOINTS
@@ -406,6 +447,12 @@ async def serve_rss():
 def _fetch_og_image(url: str) -> dict:
     if url in _og_cache:
         return _og_cache[url]
+
+    cached = database.get_cached_og_image(DB_PATH, url)
+    if cached is not None:
+        _og_cache[url] = cached
+        return cached
+
     result = {"image_url": "", "title": ""}
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
@@ -424,7 +471,7 @@ def _fetch_og_image(url: str) -> dict:
                 img_val = tag["content"].strip()
                 if img_val.startswith("//"):
                     img_val = "https:" + img_val
-                result["image_url"] = urllib.parse.urljoin(next_url, img_val)
+                result["image_url"] = _urljoin_for_redirect(next_url, img_val)
                 break
         if not result["image_url"]:
             link_tag = soup.find("link", {"rel": "image_src"})
@@ -432,7 +479,7 @@ def _fetch_og_image(url: str) -> dict:
                 img_val = link_tag["href"].strip()
                 if img_val.startswith("//"):
                     img_val = "https:" + img_val
-                result["image_url"] = urllib.parse.urljoin(next_url, img_val)
+                result["image_url"] = _urljoin_for_redirect(next_url, img_val)
 
         if not result["image_url"]:
             for img_tag in soup.find_all("img", src=True):
@@ -453,6 +500,7 @@ def _fetch_og_image(url: str) -> dict:
     except Exception:
         pass
     _og_cache[url] = result
+    database.save_og_image_cache(DB_PATH, url, result["image_url"], result["title"])
     return result
 
 
@@ -633,6 +681,42 @@ async def trigger_hourly_cron(request: Request, background_tasks: BackgroundTask
         raise HTTPException(status_code=401, detail="Invalid or missing cron secret.")
     background_tasks.add_task(run_scheduled_tasks)
     return {"message": "Hourly scheduled tasks triggered."}
+
+
+def _check_ops_secret(request: Request):
+    if not CRON_SECRET:
+        raise HTTPException(status_code=503, detail="CRON_SECRET is not configured on the server.")
+    provided = request.headers.get("X-Ops-Secret") or request.query_params.get("secret")
+    if provided != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid or missing ops secret.")
+
+
+@app.get("/api/ops/status")
+async def ops_status(request: Request):
+    """Read-only pipeline status for the ops.py CLI (or any other trusted script)
+    to poll — same shared secret as /api/cron/hourly, since anyone who can
+    trigger a sync should also be able to check on it."""
+    _check_ops_secret(request)
+    latest = database.get_latest_digest(DB_PATH)
+    return {
+        "sync": SYNC_STATUS,
+        "latest_digest_date": (latest or {}).get("date"),
+        "digest_count": len(database.get_all_digest_dates(DB_PATH)),
+        "subscriber_count": len(database.get_active_subscribers(DB_PATH)),
+        "source_count": len(database.get_sources(DB_PATH)),
+    }
+
+
+@app.post("/api/ops/sync")
+async def ops_trigger_sync(request: Request, background_tasks: BackgroundTasks, date: str = None):
+    """Manually triggers a sync run — the CLI-driven replacement for the old
+    dashboard's 'Sync Latest News' button."""
+    _check_ops_secret(request)
+    if SYNC_STATUS["status"] in ["fetching", "analyzing"]:
+        return JSONResponse(status_code=400, content={"detail": "A synchronization run is already active."})
+    target_date = date or datetime.now().strftime("%Y-%m-%d")
+    background_tasks.add_task(run_sync_job, target_date)
+    return {"message": "Sync triggered.", "date": target_date}
 
 
 # ---------------------------------------------------------------------------
