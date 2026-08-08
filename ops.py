@@ -73,6 +73,7 @@ def cmd_status(args):
     print(f"Total digests:          {data['digest_count']}")
     print(f"Active subscribers:     {data['subscriber_count']}")
     print(f"Configured sources:     {data['source_count']}")
+    print(f"ADMIN_ALERT_EMAIL:      {data.get('admin_alert_email') or '(not set on server)'}")
     if sync.get("logs"):
         print("\nRecent log lines:")
         for line in sync["logs"][-10:]:

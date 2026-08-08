@@ -704,6 +704,7 @@ async def ops_status(request: Request):
         "digest_count": len(database.get_all_digest_dates(DB_PATH)),
         "subscriber_count": len(database.get_active_subscribers(DB_PATH)),
         "source_count": len(database.get_sources(DB_PATH)),
+        "admin_alert_email": ADMIN_ALERT_EMAIL or None,
     }
 
 
