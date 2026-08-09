@@ -56,40 +56,46 @@ def fetch_hacker_news_ai(date_str, limit=20):
     return articles
 
 def fetch_reddit_ai(subreddits=None, limit=10):
-    """Fetches recent AI posts from key subreddits via PullPush (Reddit mirror).
-    Reddit's own API now requires OAuth; PullPush provides free read-only access.
+    """Fetches recent AI posts from key subreddits via Reddit RSS feeds.
+    Reddit's JSON API requires OAuth, but RSS feeds are open.
     """
-    logger.info("Fetching Reddit AI topics via PullPush mirror...")
+    logger.info("Fetching Reddit AI topics via RSS...")
     if not subreddits:
         subreddits = ["MachineLearning", "singularity", "ArtificialInteligence"]
 
     def _fetch_one_subreddit(sub):
-        url = (
-            f"https://api.pullpush.io/reddit/search/submission/"
-            f"?subreddit={sub}&size={limit}&sort=desc&sort_type=created_utc"
-        )
+        url = f"https://www.reddit.com/r/{sub}/new.rss"
         response = safe_request(url)
         items = []
         if response:
             try:
-                posts = response.json().get("data", [])
-                for post in posts:
-                    if post.get("stickied") or post.get("over_18"):
-                        continue
-                    title = post.get("title", "").strip()
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(response.content)
+                namespaces = {'atom': 'http://www.w3.org/2005/Atom'}
+                entries = root.findall('atom:entry', namespaces)
+                for entry in entries[:limit]:
+                    title_elem = entry.find('atom:title', namespaces)
+                    link_elem = entry.find('atom:link', namespaces)
+                    content_elem = entry.find('atom:content', namespaces)
+
+                    title = title_elem.text.strip() if title_elem is not None and title_elem.text else ""
+                    url_link = link_elem.get('href') if link_elem is not None else ""
+
                     if not title:
                         continue
-                    permalink = post.get("permalink", "")
-                    url_link  = f"https://www.reddit.com{permalink}" if permalink else post.get("url", "")
-                    score    = post.get("score", 0)
-                    comments = post.get("num_comments", 0)
-                    selftext = (post.get("selftext") or "").strip()
 
-                    desc = selftext[:200] + "..." if len(selftext) > 200 else selftext
+                    content = content_elem.text if content_elem is not None and content_elem.text else ""
+                    # Strip HTML from content if present
+                    from bs4 import BeautifulSoup
+                    if content:
+                        soup = BeautifulSoup(content, 'html.parser')
+                        content = soup.get_text(separator=' ').strip()
+
+                    desc = content[:200] + "..." if len(content) > 200 else content
                     if not desc:
-                        desc = f"Reddit Post in r/{sub} | Score: {score} | Comments: {comments}"
+                        desc = f"Reddit Post in r/{sub}"
                     else:
-                        desc = f"[r/{sub}] {desc} | Score: {score} | Comments: {comments}"
+                        desc = f"[r/{sub}] {desc}"
 
                     items.append({
                         "source": "Reddit",
@@ -99,7 +105,7 @@ def fetch_reddit_ai(subreddits=None, limit=10):
                         "category": "news"
                     })
             except Exception as e:
-                logger.error(f"Error parsing PullPush response for r/{sub}: {e}")
+                logger.error(f"Error parsing Reddit RSS response for r/{sub}: {e}")
         return items
 
     from concurrent.futures import ThreadPoolExecutor
