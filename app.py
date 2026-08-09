@@ -408,13 +408,51 @@ async def serve_blog(request: Request):
     return HTMLResponse(content=html)
 
 
+_ARTICLE_TITLE_KEYS = {"biggest_news": "headline", "discovered_tools": "tool", "open_source_research": "title", "market_industry": "headline"}
+_ARTICLE_DEK_KEYS   = {"biggest_news": "summary", "discovered_tools": "what_it_does", "open_source_research": "summary", "market_industry": "summary"}
+
+
 @app.get("/article.html", response_class=HTMLResponse)
-async def serve_article():
+async def serve_article(request: Request, date: str = "", section: str = "", index: int = -1):
     """Public article reading view — content is fetched client-side from
-    /api/public/article using the ?date=&section=&index= query params."""
+    /api/public/article using the ?date=&section=&index= query params, but the
+    OG/Twitter meta tags are filled in server-side here so link unfurls (Slack,
+    X, etc.) that don't execute JS still see the real headline/image, not
+    generic placeholder text."""
     article_path = os.path.join(STATIC_DIR, "article.html")
     with open(article_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
+        html = f.read()
+
+    og_title = "AI Digest — Daily Intelligence Briefing"
+    og_description = "A daily briefing on AI news, research, tools, and market movement — synthesized from 7+ live sources."
+    og_image = ""
+    try:
+        if date and section in _ARTICLE_TITLE_KEYS and index >= 0:
+            digest = database.get_digest(DB_PATH, date)
+            items = (digest or {}).get("content", {}).get(section) or []
+            if 0 <= index < len(items):
+                item = items[index]
+                title = item.get(_ARTICLE_TITLE_KEYS[section], "")
+                dek = item.get(_ARTICLE_DEK_KEYS[section], "")
+                if title:
+                    og_title = f"{title} — AI Digest"
+                if dek:
+                    og_description = dek[:200]
+                if item.get("link"):
+                    og_image = _fetch_og_image(item["link"]).get("image_url", "")
+    except Exception:
+        logger.exception("Failed to build OG tags for article page:")
+
+    og_url = os.environ.get("APP_URL") or str(request.base_url).rstrip("/")
+    og_url = f"{og_url}/article.html?date={date}&section={section}&index={index}" if date else og_url
+
+    html = (html
+        .replace("{{OG_TITLE}}", _esc_attr(og_title))
+        .replace("{{OG_DESCRIPTION}}", _esc_attr(og_description))
+        .replace("{{OG_URL}}", _esc_attr(og_url))
+        .replace("{{OG_IMAGE}}", _esc_attr(og_image)))
+
+    return HTMLResponse(content=html)
 
 
 @app.get("/rss.xml")
@@ -778,6 +816,18 @@ async def serve_sitemap(request: Request):
     )
     xml = f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}\n</urlset>'
     return Response(content=xml, media_type="application/xml")
+
+
+@app.get("/robots.txt")
+async def serve_robots(request: Request):
+    site_url = os.environ.get("APP_URL") or str(request.base_url).rstrip("/")
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /api/\n"
+        f"Sitemap: {site_url}/sitemap.xml\n"
+    )
+    return Response(content=body, media_type="text/plain")
 
 
 @app.api_route("/api/cron/hourly", methods=["GET", "POST"])
